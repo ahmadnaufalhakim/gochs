@@ -1,0 +1,13 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/gochs ./cmd/gochs"
+entrypoint = ["./tmp/gochs"]
+include_ext = ["go"]
+exclude_dir = ["build", "tmp", "vendor", "testdata"]
+exclude_unchanged = true
+stop_on_error = true
+
+[misc]
+clean_on_exit = true
