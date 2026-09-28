@@ -145,3 +145,35 @@ func (b *Board) Reset() *Board {
 
 	return b
 }
+
+func (b *Board) PieceAt(s Square) Piece {
+	switch {
+	case s.Mask()&b.WhitePawn != 0:
+		return Piece{Color: White, Type: Pawn}
+	case s.Mask()&b.WhiteKnight != 0:
+		return Piece{Color: White, Type: Knight}
+	case s.Mask()&b.WhiteBishop != 0:
+		return Piece{Color: White, Type: Bishop}
+	case s.Mask()&b.WhiteRook != 0:
+		return Piece{Color: White, Type: Rook}
+	case s.Mask()&b.WhiteQueen != 0:
+		return Piece{Color: White, Type: Queen}
+	case s.Mask()&b.WhiteKing != 0:
+		return Piece{Color: White, Type: King}
+
+	case s.Mask()&b.BlackPawn != 0:
+		return Piece{Color: Black, Type: Pawn}
+	case s.Mask()&b.BlackKnight != 0:
+		return Piece{Color: Black, Type: Knight}
+	case s.Mask()&b.BlackBishop != 0:
+		return Piece{Color: Black, Type: Bishop}
+	case s.Mask()&b.BlackRook != 0:
+		return Piece{Color: Black, Type: Rook}
+	case s.Mask()&b.BlackQueen != 0:
+		return Piece{Color: Black, Type: Queen}
+	case s.Mask()&b.BlackKing != 0:
+		return Piece{Color: Black, Type: King}
+	}
+
+	return Piece{Color: 0, Type: 0}
+}
