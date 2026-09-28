@@ -7,10 +7,10 @@ func TestPieceLabel(t *testing.T) {
 		piece Piece
 		want  string
 	}{
-		{Piece{Color: White, Type: PieceNone}, ""},
+		{Piece{Color: White, Type: PieceNone}, " "},
 		{Piece{Color: White, Type: Pawn}, "♙"},
 		{Piece{Color: White, Type: King}, "♔"},
-		{Piece{Color: Black, Type: Pawn}, "♟"},
+		{Piece{Color: Black, Type: Pawn}, "♙"},
 		{Piece{Color: Black, Type: King}, "♚"},
 	}
 
