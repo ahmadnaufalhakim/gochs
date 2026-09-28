@@ -26,7 +26,7 @@ type Piece struct {
 
 var PieceLabel = map[PieceColor]map[PieceType]string{
 	White: {
-		PieceNone: "",
+		PieceNone: " ",
 		Pawn:      "♙",
 		Knight:    "♘",
 		Bishop:    "♗",
@@ -35,8 +35,8 @@ var PieceLabel = map[PieceColor]map[PieceType]string{
 		King:      "♔",
 	},
 	Black: {
-		PieceNone: "",
-		Pawn:      "♟",
+		PieceNone: " ",
+		Pawn:      "♙",
 		Knight:    "♞",
 		Bishop:    "♝",
 		Rook:      "♜",
