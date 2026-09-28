@@ -5,12 +5,26 @@ import "errors"
 type Square uint8
 
 func (s Square) String() string {
-	file := s % 8
-	rank := s / 8
-	fileRune := rune('a' + file)
-	rankRune := rune('1' + rank)
+	fileRune := rune('a' + s.File())
+	rankRune := rune('1' + s.Rank())
 
 	return string([]rune{fileRune, rankRune})
+}
+
+func (s Square) File() uint8 {
+	return uint8(s % 8)
+}
+
+func (s Square) Rank() uint8 {
+	return uint8(s / 8)
+}
+
+func (s Square) IsDark() bool {
+	return (s.File()+s.Rank())%2 == 0
+}
+
+func (s Square) IsLight() bool {
+	return (s.File()+s.Rank())%2 == 1
 }
 
 func (s Square) Mask() Bitboard {
