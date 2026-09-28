@@ -10,7 +10,7 @@ func Run() {
 	fmt.Println("Hello from gochs!")
 
 	var r chess.Renderer
-	r.Theme = chess.DEFAULT
+	r.Theme = chess.WOOD
 	r.Perspective = chess.White
 
 	var b chess.Board
