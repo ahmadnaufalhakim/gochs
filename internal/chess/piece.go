@@ -10,6 +10,7 @@ const (
 	Rook
 	Queen
 	King
+	PieceTypeCount
 )
 
 type PieceColor uint8
@@ -17,6 +18,7 @@ type PieceColor uint8
 const (
 	White PieceColor = iota
 	Black
+	PieceColorCount
 )
 
 type Piece struct {
