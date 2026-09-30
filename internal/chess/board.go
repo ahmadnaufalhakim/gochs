@@ -113,167 +113,90 @@ func ParseCoordinate(coordinate string) (Square, error) {
 }
 
 type Board struct {
-	WhitePawn   Bitboard
-	WhiteKnight Bitboard
-	WhiteBishop Bitboard
-	WhiteRook   Bitboard
-	WhiteQueen  Bitboard
-	WhiteKing   Bitboard
-
-	BlackPawn   Bitboard
-	BlackKnight Bitboard
-	BlackBishop Bitboard
-	BlackRook   Bitboard
-	BlackQueen  Bitboard
-	BlackKing   Bitboard
-
+	Pieces      [PieceColorCount][PieceTypeCount]Bitboard
 	ColorToMove PieceColor
 }
 
-func (b *Board) Clear() *Board {
-	b.WhitePawn &= Bitboard(0)
-	b.WhiteKnight &= Bitboard(0)
-	b.WhiteBishop &= Bitboard(0)
-	b.WhiteRook &= Bitboard(0)
-	b.WhiteQueen &= Bitboard(0)
-	b.WhiteKing &= Bitboard(0)
-
-	b.BlackPawn &= Bitboard(0)
-	b.BlackKnight &= Bitboard(0)
-	b.BlackBishop &= Bitboard(0)
-	b.BlackRook &= Bitboard(0)
-	b.BlackQueen &= Bitboard(0)
-	b.BlackKing &= Bitboard(0)
-
-	return b
+func (b *Board) Clear() {
+	for color := range PieceColorCount {
+		for pieceType := Pawn; pieceType < PieceTypeCount; pieceType++ {
+			b.Pieces[color][pieceType] &= Bitboard(0)
+		}
+	}
 }
 
-func (b *Board) ClearSquare(s Square) *Board {
+func (b *Board) ClearSquare(s Square) {
 	mask := s.Mask()
-
-	b.WhitePawn &^= mask
-	b.WhiteKnight &^= mask
-	b.WhiteBishop &^= mask
-	b.WhiteRook &^= mask
-	b.WhiteQueen &^= mask
-	b.WhiteKing &^= mask
-
-	b.BlackPawn &^= mask
-	b.BlackKnight &^= mask
-	b.BlackBishop &^= mask
-	b.BlackRook &^= mask
-	b.BlackQueen &^= mask
-	b.BlackKing &^= mask
-
-	return b
+	for color := range PieceColorCount {
+		for pieceType := Pawn; pieceType < PieceTypeCount; pieceType++ {
+			b.Pieces[color][pieceType] &^= mask
+		}
+	}
 }
 
-func (b *Board) Reset() *Board {
-	b.Clear()
+var startingPositions = [PieceColorCount][PieceTypeCount]Bitboard{
+	White: {
+		Pawn:   a2.Mask() | b2.Mask() | c2.Mask() | d2.Mask() | e2.Mask() | f2.Mask() | g2.Mask() | h2.Mask(),
+		Knight: b1.Mask() | g1.Mask(),
+		Bishop: c1.Mask() | f1.Mask(),
+		Rook:   a1.Mask() | h1.Mask(),
+		Queen:  d1.Mask(),
+		King:   e1.Mask(),
+	},
+	Black: {
+		Pawn:   a7.Mask() | b7.Mask() | c7.Mask() | d7.Mask() | e7.Mask() | f7.Mask() | g7.Mask() | h7.Mask(),
+		Knight: b8.Mask() | g8.Mask(),
+		Bishop: c8.Mask() | f8.Mask(),
+		Rook:   a8.Mask() | h8.Mask(),
+		Queen:  d8.Mask(),
+		King:   e8.Mask(),
+	},
+}
 
-	b.WhitePawn = a2.Mask() | b2.Mask() | c2.Mask() | d2.Mask() | e2.Mask() | f2.Mask() | g2.Mask() | h2.Mask()
-	b.WhiteKnight = b1.Mask() | g1.Mask()
-	b.WhiteBishop = c1.Mask() | f1.Mask()
-	b.WhiteRook = a1.Mask() | h1.Mask()
-	b.WhiteQueen = d1.Mask()
-	b.WhiteKing = e1.Mask()
-
-	b.BlackPawn = a7.Mask() | b7.Mask() | c7.Mask() | d7.Mask() | e7.Mask() | f7.Mask() | g7.Mask() | h7.Mask()
-	b.BlackKnight = b8.Mask() | g8.Mask()
-	b.BlackBishop = c8.Mask() | f8.Mask()
-	b.BlackRook = a8.Mask() | h8.Mask()
-	b.BlackQueen = d8.Mask()
-	b.BlackKing = e8.Mask()
-
+func (b *Board) Reset() {
+	b.Pieces = startingPositions
 	b.ColorToMove = White
-
-	return b
 }
 
 func (b *Board) PieceAt(s Square) Piece {
-	switch {
-	case s.Mask()&b.WhitePawn != 0:
-		return Piece{Color: White, Type: Pawn}
-	case s.Mask()&b.WhiteKnight != 0:
-		return Piece{Color: White, Type: Knight}
-	case s.Mask()&b.WhiteBishop != 0:
-		return Piece{Color: White, Type: Bishop}
-	case s.Mask()&b.WhiteRook != 0:
-		return Piece{Color: White, Type: Rook}
-	case s.Mask()&b.WhiteQueen != 0:
-		return Piece{Color: White, Type: Queen}
-	case s.Mask()&b.WhiteKing != 0:
-		return Piece{Color: White, Type: King}
-
-	case s.Mask()&b.BlackPawn != 0:
-		return Piece{Color: Black, Type: Pawn}
-	case s.Mask()&b.BlackKnight != 0:
-		return Piece{Color: Black, Type: Knight}
-	case s.Mask()&b.BlackBishop != 0:
-		return Piece{Color: Black, Type: Bishop}
-	case s.Mask()&b.BlackRook != 0:
-		return Piece{Color: Black, Type: Rook}
-	case s.Mask()&b.BlackQueen != 0:
-		return Piece{Color: Black, Type: Queen}
-	case s.Mask()&b.BlackKing != 0:
-		return Piece{Color: Black, Type: King}
+	mask := s.Mask()
+	for color := range PieceColorCount {
+		for pieceType := Pawn; pieceType < PieceTypeCount; pieceType++ {
+			if b.Pieces[color][pieceType]&mask != 0 {
+				return Piece{Color: color, Type: pieceType}
+			}
+		}
 	}
 
-	return Piece{Color: 0, Type: 0}
+	return Piece{Type: PieceNone}
 }
 
 func (b *Board) SetPieceAt(s Square, p Piece) {
 	b.ClearSquare(s)
+	if p.Type == PieceNone {
+		return
+	}
 
 	mask := s.Mask()
-	switch p.Color {
-	case White:
-		switch p.Type {
-		case Pawn:
-			b.WhitePawn |= mask
-		case Knight:
-			b.WhiteKnight |= mask
-		case Bishop:
-			b.WhiteBishop |= mask
-		case Rook:
-			b.WhiteRook |= mask
-		case Queen:
-			b.WhiteQueen |= mask
-		case King:
-			b.WhiteKing |= mask
-		}
-	case Black:
-		switch p.Type {
-		case Pawn:
-			b.BlackPawn |= mask
-		case Knight:
-			b.BlackKnight |= mask
-		case Bishop:
-			b.BlackBishop |= mask
-		case Rook:
-			b.BlackRook |= mask
-		case Queen:
-			b.BlackQueen |= mask
-		case King:
-			b.BlackKing |= mask
-		}
-	}
+	b.Pieces[p.Color][p.Type] |= mask
 }
 
 func (b *Board) Occupied() Bitboard {
-	return b.WhitePawn | b.WhiteKnight | b.WhiteBishop | b.WhiteRook | b.WhiteQueen | b.WhiteKing |
-		b.BlackPawn | b.BlackKnight | b.BlackBishop | b.BlackRook | b.BlackQueen | b.BlackKing
+	result := Bitboard(0)
+	for color := range PieceColorCount {
+		for pieceType := Pawn; pieceType < PieceTypeCount; pieceType++ {
+			result |= b.Pieces[color][pieceType]
+		}
+	}
+	return result
 }
 
 func (b *Board) OccupiedBy(c PieceColor) Bitboard {
-	switch c {
-	case White:
-		return b.WhitePawn | b.WhiteKnight | b.WhiteBishop | b.WhiteRook | b.WhiteQueen | b.WhiteKing
-	case Black:
-		return b.BlackPawn | b.BlackKnight | b.BlackBishop | b.BlackRook | b.BlackQueen | b.BlackKing
-	default:
-		return Bitboard(0)
+	result := Bitboard(0)
+	for pieceType := Pawn; pieceType < PieceTypeCount; pieceType++ {
+		result |= b.Pieces[c][pieceType]
 	}
+	return result
 }
 
 func (b *Board) IsOccupied(s Square) bool {
