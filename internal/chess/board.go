@@ -126,6 +126,8 @@ type Board struct {
 	BlackRook   Bitboard
 	BlackQueen  Bitboard
 	BlackKing   Bitboard
+
+	ColorToMove PieceColor
 }
 
 func (b *Board) Reset() *Board {
@@ -142,6 +144,8 @@ func (b *Board) Reset() *Board {
 	b.BlackRook = a8.Mask() | h8.Mask()
 	b.BlackQueen = d8.Mask()
 	b.BlackKing = e8.Mask()
+
+	b.ColorToMove = White
 
 	return b
 }
