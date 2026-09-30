@@ -259,3 +259,27 @@ func (b *Board) SetPieceAt(s Square, p Piece) {
 		}
 	}
 }
+
+func (b *Board) Occupied() Bitboard {
+	return b.WhitePawn | b.WhiteKnight | b.WhiteBishop | b.WhiteRook | b.WhiteQueen | b.WhiteKing |
+		b.BlackPawn | b.BlackKnight | b.BlackBishop | b.BlackRook | b.BlackQueen | b.BlackKing
+}
+
+func (b *Board) OccupiedBy(c PieceColor) Bitboard {
+	switch c {
+	case White:
+		return b.WhitePawn | b.WhiteKnight | b.WhiteBishop | b.WhiteRook | b.WhiteQueen | b.WhiteKing
+	case Black:
+		return b.BlackPawn | b.BlackKnight | b.BlackBishop | b.BlackRook | b.BlackQueen | b.BlackKing
+	default:
+		return Bitboard(0)
+	}
+}
+
+func (b *Board) IsOccupied(s Square) bool {
+	return s.Mask()&b.Occupied() != 0
+}
+
+func (b *Board) IsOccupiedBy(s Square, c PieceColor) bool {
+	return s.Mask()&b.OccupiedBy(c) != 0
+}
