@@ -130,7 +130,27 @@ type Board struct {
 	ColorToMove PieceColor
 }
 
+func (b *Board) Clear() *Board {
+	b.WhitePawn &= Bitboard(0)
+	b.WhiteKnight &= Bitboard(0)
+	b.WhiteBishop &= Bitboard(0)
+	b.WhiteRook &= Bitboard(0)
+	b.WhiteQueen &= Bitboard(0)
+	b.WhiteKing &= Bitboard(0)
+
+	b.BlackPawn &= Bitboard(0)
+	b.BlackKnight &= Bitboard(0)
+	b.BlackBishop &= Bitboard(0)
+	b.BlackRook &= Bitboard(0)
+	b.BlackQueen &= Bitboard(0)
+	b.BlackKing &= Bitboard(0)
+
+	return b
+}
+
 func (b *Board) Reset() *Board {
+	b.Clear()
+
 	b.WhitePawn = a2.Mask() | b2.Mask() | c2.Mask() | d2.Mask() | e2.Mask() | f2.Mask() | g2.Mask() | h2.Mask()
 	b.WhiteKnight = b1.Mask() | g1.Mask()
 	b.WhiteBishop = c1.Mask() | f1.Mask()
