@@ -67,26 +67,31 @@ func TestParseCoordinateRejectsInvalidCoordinates(t *testing.T) {
 }
 
 func TestBoardReset(t *testing.T) {
-	board := Board{WhitePawn: ^Bitboard(0)}
-	got := board.Reset()
-
-	if got != &board {
-		t.Fatal("Reset() did not return the receiver")
-	}
+	board := Board{Pieces: [PieceColorCount][PieceTypeCount]Bitboard{
+		White: {Pawn: ^Bitboard(0)},
+	}}
+	board.Reset()
 
 	want := Board{
-		WhitePawn:   0x000000000000ff00,
-		WhiteKnight: 0x0000000000000042,
-		WhiteBishop: 0x0000000000000024,
-		WhiteRook:   0x0000000000000081,
-		WhiteQueen:  0x0000000000000008,
-		WhiteKing:   0x0000000000000010,
-		BlackPawn:   0x00ff000000000000,
-		BlackKnight: 0x4200000000000000,
-		BlackBishop: 0x2400000000000000,
-		BlackRook:   0x8100000000000000,
-		BlackQueen:  0x0800000000000000,
-		BlackKing:   0x1000000000000000,
+		Pieces: [PieceColorCount][PieceTypeCount]Bitboard{
+			White: {
+				Pawn:   0x000000000000ff00,
+				Knight: 0x0000000000000042,
+				Bishop: 0x0000000000000024,
+				Rook:   0x0000000000000081,
+				Queen:  0x0000000000000008,
+				King:   0x0000000000000010,
+			},
+			Black: {
+				Pawn:   0x00ff000000000000,
+				Knight: 0x4200000000000000,
+				Bishop: 0x2400000000000000,
+				Rook:   0x8100000000000000,
+				Queen:  0x0800000000000000,
+				King:   0x1000000000000000,
+			},
+		},
+		ColorToMove: White,
 	}
 
 	if board != want {
