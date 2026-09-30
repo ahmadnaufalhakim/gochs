@@ -148,6 +148,26 @@ func (b *Board) Clear() *Board {
 	return b
 }
 
+func (b *Board) ClearSquare(s Square) *Board {
+	mask := s.Mask()
+
+	b.WhitePawn &^= mask
+	b.WhiteKnight &^= mask
+	b.WhiteBishop &^= mask
+	b.WhiteRook &^= mask
+	b.WhiteQueen &^= mask
+	b.WhiteKing &^= mask
+
+	b.BlackPawn &^= mask
+	b.BlackKnight &^= mask
+	b.BlackBishop &^= mask
+	b.BlackRook &^= mask
+	b.BlackQueen &^= mask
+	b.BlackKing &^= mask
+
+	return b
+}
+
 func (b *Board) Reset() *Board {
 	b.Clear()
 
@@ -200,4 +220,42 @@ func (b *Board) PieceAt(s Square) Piece {
 	}
 
 	return Piece{Color: 0, Type: 0}
+}
+
+func (b *Board) SetPieceAt(s Square, p Piece) {
+	b.ClearSquare(s)
+
+	mask := s.Mask()
+	switch p.Color {
+	case White:
+		switch p.Type {
+		case Pawn:
+			b.WhitePawn |= mask
+		case Knight:
+			b.WhiteKnight |= mask
+		case Bishop:
+			b.WhiteBishop |= mask
+		case Rook:
+			b.WhiteRook |= mask
+		case Queen:
+			b.WhiteQueen |= mask
+		case King:
+			b.WhiteKing |= mask
+		}
+	case Black:
+		switch p.Type {
+		case Pawn:
+			b.BlackPawn |= mask
+		case Knight:
+			b.BlackKnight |= mask
+		case Bishop:
+			b.BlackBishop |= mask
+		case Rook:
+			b.BlackRook |= mask
+		case Queen:
+			b.BlackQueen |= mask
+		case King:
+			b.BlackKing |= mask
+		}
+	}
 }
