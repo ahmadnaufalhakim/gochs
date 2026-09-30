@@ -16,5 +16,16 @@ func Run() {
 	var b chess.Board
 	b.Reset()
 
+	square, err := chess.ParseCoordinate("a3")
+	if err != nil {
+		panic(err)
+	}
+	b.SetPieceAt(square, chess.Piece{
+		Color: chess.White,
+		Type:  chess.Pawn,
+	})
+	// b.SetPieceAt()
+	// b.ColorToMove = chess.Black
+
 	r.Print(b)
 }
