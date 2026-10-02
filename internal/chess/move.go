@@ -26,7 +26,7 @@ func GeneratePawnMoves(b Board) Bitboard {
 	}
 
 	pawnSinglePushes := pawnSinglePushFn(pawns) & unoccupied
-	pawnDoublePushes := (pawnSinglePushes << 8) & unoccupied & doublePushDestinationRank
+	pawnDoublePushes := pawnSinglePushFn(pawnSinglePushes) & unoccupied & doublePushDestinationRank
 
 	return pawnSinglePushes | pawnDoublePushes
 }
