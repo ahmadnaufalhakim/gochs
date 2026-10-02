@@ -136,7 +136,7 @@ func (b *Board) ClearSquare(s Square) {
 
 var startingPositions = [PieceColorCount][PieceTypeCount]Bitboard{
 	White: {
-		Pawn:   a2.Mask() | b2.Mask() | c2.Mask() | d2.Mask() | e2.Mask() | f2.Mask() | g2.Mask() | h2.Mask(),
+		Pawn:   rank2,
 		Knight: b1.Mask() | g1.Mask(),
 		Bishop: c1.Mask() | f1.Mask(),
 		Rook:   a1.Mask() | h1.Mask(),
@@ -144,7 +144,7 @@ var startingPositions = [PieceColorCount][PieceTypeCount]Bitboard{
 		King:   e1.Mask(),
 	},
 	Black: {
-		Pawn:   a7.Mask() | b7.Mask() | c7.Mask() | d7.Mask() | e7.Mask() | f7.Mask() | g7.Mask() | h7.Mask(),
+		Pawn:   rank7,
 		Knight: b8.Mask() | g8.Mask(),
 		Bishop: c8.Mask() | f8.Mask(),
 		Rook:   a8.Mask() | h8.Mask(),
