@@ -181,6 +181,14 @@ func (b *Board) SetPieceAt(s Square, p Piece) {
 	b.Pieces[p.Color][p.Type] |= mask
 }
 
+func (b *Board) Validate() error {
+	if err := b.validatePawnPositions(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (b *Board) Occupied() Bitboard {
 	result := Bitboard(0)
 	for color := range PieceColorCount {
