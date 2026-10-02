@@ -191,7 +191,7 @@ func (b *Board) Occupied() Bitboard {
 	return result
 }
 
-func (b *Board) OccupiedBy(c PieceColor) Bitboard {
+func (b *Board) OccupiedByColor(c PieceColor) Bitboard {
 	result := Bitboard(0)
 	for pieceType := Pawn; pieceType < PieceTypeCount; pieceType++ {
 		result |= b.Pieces[c][pieceType]
@@ -199,10 +199,10 @@ func (b *Board) OccupiedBy(c PieceColor) Bitboard {
 	return result
 }
 
-func (b *Board) IsOccupied(s Square) bool {
+func (b *Board) IsSquareOccupied(s Square) bool {
 	return s.Mask()&b.Occupied() != 0
 }
 
-func (b *Board) IsOccupiedBy(s Square, c PieceColor) bool {
-	return s.Mask()&b.OccupiedBy(c) != 0
+func (b *Board) IsSquareOccupiedByColor(s Square, c PieceColor) bool {
+	return s.Mask()&b.OccupiedByColor(c) != 0
 }
