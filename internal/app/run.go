@@ -23,8 +23,9 @@ func Run() {
 	}{
 		{coord: "a3", color: chess.White, pieceType: chess.Pawn},
 		{coord: "b2", color: chess.White, pieceType: chess.Pawn},
-		{coord: "b3", color: chess.White, pieceType: chess.Knight},
+		{coord: "b3", color: chess.Black, pieceType: chess.Knight},
 		{coord: "c2", color: chess.White, pieceType: chess.Pawn},
+		{coord: "d4", color: chess.Black, pieceType: chess.Knight},
 		{coord: "e2", color: chess.White, pieceType: chess.Pawn},
 		{coord: "e5", color: chess.White, pieceType: chess.Pawn},
 		{coord: "g2", color: chess.White, pieceType: chess.Pawn},
@@ -41,14 +42,16 @@ func Run() {
 			Type:  pair.pieceType,
 		})
 	}
-
-	// b.SetPieceAt()
-	// b.ColorToMove = chess.Black
+	b.ColorToMove = chess.Black
 
 	r.Print(b)
 
 	fmt.Println("Validating the board..")
 	fmt.Println(b.Validate())
+	fmt.Println("pawn moves:")
 	pawnMoves := chess.GeneratePawnMoves(b)
 	pawnMoves.Print()
+	fmt.Println("knight moves:")
+	knightMoves := chess.GenerateKnightMoves(b)
+	knightMoves.Print()
 }
