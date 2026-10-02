@@ -199,10 +199,22 @@ func (b *Board) OccupiedByColor(c PieceColor) Bitboard {
 	return result
 }
 
+func (b *Board) OccupiedByPieceType(t PieceType) Bitboard {
+	result := Bitboard(0)
+	for color := range PieceColorCount {
+		result |= b.Pieces[color][t]
+	}
+	return result
+}
+
 func (b *Board) IsSquareOccupied(s Square) bool {
 	return s.Mask()&b.Occupied() != 0
 }
 
 func (b *Board) IsSquareOccupiedByColor(s Square, c PieceColor) bool {
 	return s.Mask()&b.OccupiedByColor(c) != 0
+}
+
+func (b *Board) IsSquareOccupiedByPieceType(s Square, t PieceType) bool {
+	return s.Mask()&b.OccupiedByPieceType(t) != 0
 }
