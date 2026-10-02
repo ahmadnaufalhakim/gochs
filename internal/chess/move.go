@@ -1,18 +1,20 @@
 package chess
 
-var knightMoveOffsets = [][2]int{
-	{-1, -2}, {1, -2},
-	{-2, -1}, {2, -1},
-	{-2, 1}, {2, 1},
-	{-1, 2}, {1, 2},
+type MoveDelta struct {
+	File int8
+	Rank int8
 }
 
-func knightAllowedSources(offset [2]int) Bitboard {
-	fileOffset := offset[0]
-	rankOffset := offset[1]
+var knightMoveDelta = []MoveDelta{
+	{File: -1, Rank: -2}, {File: 1, Rank: -2},
+	{File: -2, Rank: -1}, {File: 2, Rank: -1},
+	{File: -2, Rank: 1}, {File: 2, Rank: 1},
+	{File: -1, Rank: 2}, {File: 1, Rank: 2},
+}
 
-	sources := Bitboard(0)
-	switch fileOffset {
+func allowedSources(delta MoveDelta) Bitboard {
+	var sources Bitboard
+	switch delta.File {
 	case -2:
 		sources = ^(fileA | fileB)
 	case -1:
@@ -22,7 +24,7 @@ func knightAllowedSources(offset [2]int) Bitboard {
 	case 2:
 		sources = ^(fileG | fileH)
 	}
-	switch rankOffset {
+	switch delta.Rank {
 	case -2:
 		sources &= ^(rank1 | rank2)
 	case -1:
@@ -71,10 +73,10 @@ func GenerateKnightMoves(b Board) Bitboard {
 	knights := b.Pieces[b.ColorToMove][Knight]
 
 	var moves Bitboard
-	for _, offset := range knightMoveOffsets {
-		sources := knights & knightAllowedSources(offset)
+	for _, delta := range knightMoveDelta {
+		sources := knights & allowedSources(delta)
 
-		shift := offset[0] + offset[1]*8
+		shift := delta.File + delta.Rank*8
 		if shift > 0 {
 			moves |= sources << shift
 		} else {
