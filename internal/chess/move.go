@@ -134,8 +134,8 @@ func GenerateKnightMoves(b Board) Bitboard {
 
 	for _, delta := range knightMoveDeltas {
 		sources := knights & allowedSources(delta)
-
 		shift := delta.File + delta.Rank*8
+
 		if shift > 0 {
 			moves |= sources << shift
 		} else {
@@ -193,8 +193,8 @@ func GenerateKingMoves(b Board) Bitboard {
 
 	for _, delta := range queenMoveDeltas {
 		sources := king & allowedSources(delta)
-
 		shift := delta.File + delta.Rank*8
+
 		if shift > 0 {
 			moves |= sources << shift
 		} else {
