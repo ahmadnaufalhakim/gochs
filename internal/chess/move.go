@@ -19,6 +19,8 @@ func allowedSources(delta MoveDelta) Bitboard {
 		sources = ^(fileA | fileB)
 	case -1:
 		sources = ^fileA
+	case 0:
+		sources = ^Bitboard(0)
 	case 1:
 		sources = ^fileH
 	case 2:
@@ -29,6 +31,8 @@ func allowedSources(delta MoveDelta) Bitboard {
 		sources &= ^(rank1 | rank2)
 	case -1:
 		sources &= ^rank1
+	case 0:
+		sources &= ^Bitboard(0)
 	case 1:
 		sources &= ^rank8
 	case 2:
