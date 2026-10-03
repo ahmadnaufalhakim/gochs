@@ -102,10 +102,38 @@ func slidingMovesFrom(b Board, from Square, deltas []MoveDelta) Bitboard {
 	return moves
 }
 
-type Move struct {
-	From      Square
-	To        Square
-	Promotion PieceType
+type Move uint16
+type MoveFlag uint8
+
+const (
+	KingSideCastle MoveFlag = iota
+	QueenSideCastle
+	RESERVED_2
+	RESERVED_3
+	QuietMove
+	Capture
+	DoublePawnPush
+	EnPassant
+	PromoteKnight
+	PromoteBishop
+	PromoteRook
+	PromoteQueen
+	PromoteCaptureKnight
+	PromoteCaptureBishop
+	PromoteCaptureRook
+	PromoteCaptureQueen
+)
+
+func (m Move) From() Square {
+	return Square(m & 0x3F)
+}
+
+func (m Move) To() Square {
+	return Square((m >> 6) & 0x3F)
+}
+
+func (m Move) Flag() MoveFlag {
+	return MoveFlag((m >> 12) & 0x3F)
 }
 
 func GeneratePawnMoveDestinations(b Board) Bitboard {
