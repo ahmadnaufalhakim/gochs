@@ -131,7 +131,7 @@ func GeneratePawnMoveDestinations(b Board) Bitboard {
 func GeneratePawnCaptureMoveDestinations(b Board) Bitboard {
 	var moves Bitboard
 	pawns := b.Pieces[b.ColorToMove][Pawn]
-	occupiedByOpponent := b.Occupied() & ^b.OccupiedByColor(b.ColorToMove)
+	occupiedByOpponent := b.OccupiedByColor(b.ColorToMove.Opponent())
 
 	for _, delta := range pawnAttackMoveDeltas[b.ColorToMove] {
 		sources := pawns & allowedSources(delta)
