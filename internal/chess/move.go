@@ -251,7 +251,7 @@ func GenerateBishopMoveDestinations(b Board) Bitboard {
 
 	for from := a1; from <= h8; from++ {
 		if bishops&from.Mask() != 0 {
-			moves |= slidingMovesFrom(b, from, bishopMoveDeltas)
+			moves |= slidingMoveDestinationsFrom(b, from, bishopMoveDeltas)
 		}
 	}
 
@@ -264,7 +264,7 @@ func GenerateRookMoveDestinations(b Board) Bitboard {
 
 	for from := a1; from <= h8; from++ {
 		if rooks&from.Mask() != 0 {
-			moves |= slidingMovesFrom(b, from, rookMoveDeltas)
+			moves |= slidingMoveDestinationsFrom(b, from, rookMoveDeltas)
 		}
 	}
 
@@ -277,7 +277,7 @@ func GenerateQueenMoveDestinations(b Board) Bitboard {
 
 	for from := a1; from <= h8; from++ {
 		if queens&from.Mask() != 0 {
-			moves |= slidingMovesFrom(b, from, queenMoveDeltas)
+			moves |= slidingMoveDestinationsFrom(b, from, queenMoveDeltas)
 		}
 	}
 
