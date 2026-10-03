@@ -108,7 +108,7 @@ type Move struct {
 	Promotion PieceType
 }
 
-func GeneratePawnMoves(b Board) Bitboard {
+func GeneratePawnMoveDestinations(b Board) Bitboard {
 	var moves Bitboard
 	pawns := b.Pieces[b.ColorToMove][Pawn]
 	occupied := b.Occupied()
@@ -128,7 +128,7 @@ func GeneratePawnMoves(b Board) Bitboard {
 	return moves
 }
 
-func GeneratePawnCaptureMoves(b Board) Bitboard {
+func GeneratePawnCaptureMoveDestinations(b Board) Bitboard {
 	var moves Bitboard
 	pawns := b.Pieces[b.ColorToMove][Pawn]
 	occupiedByOpponent := b.Occupied() & ^b.OccupiedByColor(b.ColorToMove)
@@ -149,7 +149,7 @@ func GeneratePawnCaptureMoves(b Board) Bitboard {
 	return moves
 }
 
-func GenerateKnightMoves(b Board) Bitboard {
+func GenerateKnightMoveDestinations(b Board) Bitboard {
 	var moves Bitboard
 	knights := b.Pieces[b.ColorToMove][Knight]
 
@@ -169,7 +169,7 @@ func GenerateKnightMoves(b Board) Bitboard {
 	return moves
 }
 
-func GenerateBishopMoves(b Board) Bitboard {
+func GenerateBishopMoveDestinations(b Board) Bitboard {
 	var moves Bitboard
 	bishops := b.Pieces[b.ColorToMove][Bishop]
 
@@ -182,7 +182,7 @@ func GenerateBishopMoves(b Board) Bitboard {
 	return moves
 }
 
-func GenerateRookMoves(b Board) Bitboard {
+func GenerateRookMoveDestinations(b Board) Bitboard {
 	var moves Bitboard
 	rooks := b.Pieces[b.ColorToMove][Rook]
 
@@ -195,7 +195,7 @@ func GenerateRookMoves(b Board) Bitboard {
 	return moves
 }
 
-func GenerateQueenMoves(b Board) Bitboard {
+func GenerateQueenMoveDestinations(b Board) Bitboard {
 	var moves Bitboard
 	queens := b.Pieces[b.ColorToMove][Queen]
 
@@ -208,7 +208,7 @@ func GenerateQueenMoves(b Board) Bitboard {
 	return moves
 }
 
-func GenerateKingMoves(b Board) Bitboard {
+func GenerateKingMoveDestinations(b Board) Bitboard {
 	var moves Bitboard
 	king := b.Pieces[b.ColorToMove][King]
 
