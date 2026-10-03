@@ -116,9 +116,9 @@ func GeneratePawnMoves(b Board) Bitboard {
 }
 
 func GenerateKnightMoves(b Board) Bitboard {
+	var moves Bitboard
 	knights := b.Pieces[b.ColorToMove][Knight]
 
-	var moves Bitboard
 	for _, delta := range knightMoveDelta {
 		sources := knights & allowedSources(delta)
 
@@ -129,6 +129,7 @@ func GenerateKnightMoves(b Board) Bitboard {
 			moves |= sources >> -shift
 		}
 	}
+
 	moves &^= b.OccupiedByColor(b.ColorToMove)
 
 	return moves
@@ -136,8 +137,10 @@ func GenerateKnightMoves(b Board) Bitboard {
 
 func GenerateBishopMoves(b Board) Bitboard {
 	var moves Bitboard
+	bishops := b.Pieces[b.ColorToMove][Bishop]
+
 	for from := a1; from <= h8; from++ {
-		if b.Pieces[b.ColorToMove][Bishop]&from.Mask() != 0 {
+		if bishops&from.Mask() != 0 {
 			moves |= slidingMovesFrom(b, from, bishopMoveDelta)
 		}
 	}
@@ -147,8 +150,10 @@ func GenerateBishopMoves(b Board) Bitboard {
 
 func GenerateRookMoves(b Board) Bitboard {
 	var moves Bitboard
+	rooks := b.Pieces[b.ColorToMove][Rook]
+
 	for from := a1; from <= h8; from++ {
-		if b.Pieces[b.ColorToMove][Rook]&from.Mask() != 0 {
+		if rooks&from.Mask() != 0 {
 			moves |= slidingMovesFrom(b, from, rookMoveDelta)
 		}
 	}
@@ -158,8 +163,10 @@ func GenerateRookMoves(b Board) Bitboard {
 
 func GenerateQueenMoves(b Board) Bitboard {
 	var moves Bitboard
+	queens := b.Pieces[b.ColorToMove][Queen]
+
 	for from := a1; from <= h8; from++ {
-		if b.Pieces[b.ColorToMove][Queen]&from.Mask() != 0 {
+		if queens&from.Mask() != 0 {
 			moves |= slidingMovesFrom(b, from, append(bishopMoveDelta, rookMoveDelta...))
 		}
 	}
@@ -168,9 +175,9 @@ func GenerateQueenMoves(b Board) Bitboard {
 }
 
 func GenerateKingMoves(b Board) Bitboard {
+	var moves Bitboard
 	king := b.Pieces[b.ColorToMove][King]
 
-	var moves Bitboard
 	for _, delta := range append(bishopMoveDelta, rookMoveDelta...) {
 		sources := king & allowedSources(delta)
 
@@ -181,6 +188,7 @@ func GenerateKingMoves(b Board) Bitboard {
 			moves |= sources >> -shift
 		}
 	}
+
 	moves &^= b.OccupiedByColor(b.ColorToMove)
 
 	return moves
