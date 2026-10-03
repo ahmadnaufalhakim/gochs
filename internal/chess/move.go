@@ -151,6 +151,10 @@ const (
 	PromoteCaptureQueen
 )
 
+func NewMove(from, to Square, flag MoveFlag) Move {
+	return Move(from) | Move(to)<<6 | Move(flag)<<12
+}
+
 func (m Move) From() Square {
 	return Square(m & 0x3F)
 }
