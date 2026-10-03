@@ -166,3 +166,22 @@ func GenerateQueenMoves(b Board) Bitboard {
 
 	return moves
 }
+
+func GenerateKingMoves(b Board) Bitboard {
+	king := b.Pieces[b.ColorToMove][King]
+
+	var moves Bitboard
+	for _, delta := range append(bishopMoveDelta, rookMoveDelta...) {
+		sources := king & allowedSources(delta)
+
+		shift := delta.File + delta.Rank*8
+		if shift > 0 {
+			moves |= sources << shift
+		} else {
+			moves |= sources >> -shift
+		}
+	}
+	moves &^= b.OccupiedByColor(b.ColorToMove)
+
+	return moves
+}
