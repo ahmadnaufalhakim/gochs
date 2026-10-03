@@ -102,6 +102,33 @@ func slidingMovesFrom(b Board, from Square, deltas []MoveDelta) Bitboard {
 	return moves
 }
 
+func slidingAttacksFrom(b Board, from Square, deltas []MoveDelta) Bitboard {
+	occupied := b.Occupied()
+
+	var moves Bitboard
+	for _, delta := range deltas {
+		file := int8(from.File())
+		rank := int8(from.Rank())
+
+		for {
+			file += delta.File
+			rank += delta.Rank
+			if file < 0 || file > 7 || rank < 0 || rank > 7 {
+				break
+			}
+
+			to := Square(file + rank*8)
+			moves |= to.Mask()
+
+			if occupied&to.Mask() != 0 {
+				break
+			}
+		}
+	}
+
+	return moves
+}
+
 type Move uint16
 type MoveFlag uint8
 
@@ -133,7 +160,49 @@ func (m Move) To() Square {
 }
 
 func (m Move) Flag() MoveFlag {
-	return MoveFlag((m >> 12) & 0x3F)
+	return MoveFlag((m >> 12) & 0xF)
+}
+
+func (m Move) String() string {
+	from := m.From().String()
+	to := m.To().String()
+
+	switch m.Flag() {
+	case KingSideCastle:
+		return from + "-" + to + " (O-O)"
+	case QueenSideCastle:
+		return from + "-" + to + " (O-O-O)"
+	case QuietMove:
+		return from + "-" + to
+	case Capture:
+		return from + "x" + to
+	case DoublePawnPush:
+		return from + "-" + to + " (double push)"
+	case EnPassant:
+		return from + "x" + to + " e.p."
+	case PromoteKnight:
+		return from + "-" + to + "=N"
+	case PromoteBishop:
+		return from + "-" + to + "=B"
+	case PromoteRook:
+		return from + "-" + to + "=R"
+	case PromoteQueen:
+		return from + "-" + to + "=Q"
+	case PromoteCaptureKnight:
+		return from + "x" + to + "=N"
+	case PromoteCaptureBishop:
+		return from + "x" + to + "=B"
+	case PromoteCaptureRook:
+		return from + "x" + to + "=R"
+	case PromoteCaptureQueen:
+		return from + "x" + to + "=Q"
+	default:
+		return from + "-" + to + " (invalid flag)"
+	}
+}
+
+func (m Move) Print() {
+	fmt.Println(m)
 }
 
 func GeneratePawnMoveDestinations(b Board) Bitboard {
