@@ -1,6 +1,8 @@
 package chess
 
-import "errors"
+import (
+	"errors"
+)
 
 type Square uint8
 
@@ -183,6 +185,9 @@ func (b *Board) SetPieceAt(s Square, p Piece) {
 
 func (b *Board) Validate() error {
 	if err := b.validateKingCount(); err != nil {
+		return err
+	}
+	if err := b.validateKingCheck(); err != nil {
 		return err
 	}
 	if err := b.validatePawnPositions(); err != nil {

@@ -25,6 +25,17 @@ func (c PieceColor) Opponent() PieceColor {
 	return c ^ 1
 }
 
+func (c PieceColor) String() string {
+	switch c {
+	case White:
+		return "White"
+	case Black:
+		return "Black"
+	default:
+		return (c % 2).String()
+	}
+}
+
 type Piece struct {
 	Color PieceColor
 	Type  PieceType

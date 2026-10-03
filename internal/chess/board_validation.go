@@ -1,6 +1,9 @@
 package chess
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 const (
 	fileA Bitboard = 0x0101010101010101
@@ -36,6 +39,18 @@ func (b *Board) validateKingCount() error {
 	if !b.Pieces[b.ColorToMove][King].IsSingleBit() ||
 		!b.Pieces[b.ColorToMove.Opponent()][King].IsSingleBit() {
 		return errors.New("each side must have exactly one king")
+	}
+
+	return nil
+}
+
+func (b *Board) validateKingCheck() error {
+	if b.IsColorInCheck(b.ColorToMove.Opponent()) {
+		return fmt.Errorf(
+			"%s to move, but %s is in check",
+			b.ColorToMove.String(),
+			b.ColorToMove.Opponent().String(),
+		)
 	}
 
 	return nil
