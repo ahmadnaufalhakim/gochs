@@ -237,3 +237,46 @@ func (b *Board) IsSquareOccupiedByPieceType(s Square, t PieceType) bool {
 func (b *Board) IsSquareOccupiedByPiece(s Square, p Piece) bool {
 	return s.Mask()&b.OccupiedByPiece(p) != 0
 }
+
+func (b *Board) IsColorInCheck(c PieceColor) bool {
+	king := b.Pieces[c][King]
+
+	for square := a1; square <= h8; square++ {
+		if king&square.Mask() != 0 {
+			return b.IsSquareAttackedBy(square, c.Opponent())
+		}
+	}
+
+	return false
+}
+
+func (b *Board) IsSquareAttackedBy(s Square, by PieceColor) bool {
+	mask := s.Mask()
+
+	opponentPawnAttacks := GeneratePawnAttacks(*b, by)
+	if opponentPawnAttacks&mask != 0 {
+		return true
+	}
+	opponentKnightAttacks := GenerateKnightAttacks(*b, by)
+	if opponentKnightAttacks&mask != 0 {
+		return true
+	}
+	opponentBishopAttacks := GenerateBishopAttacks(*b, by)
+	if opponentBishopAttacks&mask != 0 {
+		return true
+	}
+	opponentRookAttacks := GenerateRookAttacks(*b, by)
+	if opponentRookAttacks&mask != 0 {
+		return true
+	}
+	opponentQueenAttacks := GenerateQueenAttacks(*b, by)
+	if opponentQueenAttacks&mask != 0 {
+		return true
+	}
+	opponentKingAttacks := GenerateKingAttacks(*b, by)
+	if opponentKingAttacks&mask != 0 {
+		return true
+	}
+
+	return false
+}
