@@ -52,6 +52,38 @@ func allowedSources(delta MoveDelta) Bitboard {
 	return sources
 }
 
+func slidingMovesFrom(b Board, from Square, deltas []MoveDelta) Bitboard {
+	own := b.OccupiedByColor(b.ColorToMove)
+	occupied := b.Occupied()
+
+	var moves Bitboard
+	for _, delta := range deltas {
+		file := int8(from.File())
+		rank := int8(from.Rank())
+
+		for {
+			file += delta.File
+			rank += delta.Rank
+			if file < 0 || file > 7 || rank < 0 || rank > 7 {
+				break
+			}
+
+			to := Square(file + rank*8)
+			if own&to.Mask() != 0 {
+				break
+			}
+
+			moves |= to.Mask()
+
+			if occupied&to.Mask() != 0 {
+				break
+			}
+		}
+	}
+
+	return moves
+}
+
 type Move struct {
 	From      Square
 	To        Square
@@ -98,6 +130,28 @@ func GenerateKnightMoves(b Board) Bitboard {
 		}
 	}
 	moves &^= b.OccupiedByColor(b.ColorToMove)
+
+	return moves
+}
+
+func GenerateBishopMoves(b Board) Bitboard {
+	var moves Bitboard
+	for from := a1; from <= h8; from++ {
+		if b.Pieces[b.ColorToMove][Bishop]&from.Mask() != 0 {
+			moves |= slidingMovesFrom(b, from, bishopMoveDelta)
+		}
+	}
+
+	return moves
+}
+
+func GenerateRookMoves(b Board) Bitboard {
+	var moves Bitboard
+	for from := a1; from <= h8; from++ {
+		if b.Pieces[b.ColorToMove][Rook]&from.Mask() != 0 {
+			moves |= slidingMovesFrom(b, from, rookMoveDelta)
+		}
+	}
 
 	return moves
 }
