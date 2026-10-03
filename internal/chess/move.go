@@ -128,6 +128,27 @@ func GeneratePawnMoves(b Board) Bitboard {
 	return moves
 }
 
+func GeneratePawnCaptureMoves(b Board) Bitboard {
+	var moves Bitboard
+	pawns := b.Pieces[b.ColorToMove][Pawn]
+	occupiedByOpponent := b.Occupied() & ^b.OccupiedByColor(b.ColorToMove)
+
+	for _, delta := range pawnAttackMoveDeltas[b.ColorToMove] {
+		sources := pawns & allowedSources(delta)
+		shift := delta.File + delta.Rank*8
+
+		if shift > 0 {
+			moves |= sources << shift
+		} else {
+			moves |= sources >> -shift
+		}
+	}
+
+	moves &= occupiedByOpponent
+
+	return moves
+}
+
 func GenerateKnightMoves(b Board) Bitboard {
 	var moves Bitboard
 	knights := b.Pieces[b.ColorToMove][Knight]
