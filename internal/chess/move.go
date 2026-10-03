@@ -1,5 +1,7 @@
 package chess
 
+import "fmt"
+
 type MoveDelta struct {
 	File int8
 	Rank int8
@@ -70,42 +72,15 @@ func allowedSources(delta MoveDelta) Bitboard {
 	return sources
 }
 
-func slidingMovesFrom(b Board, from Square, deltas []MoveDelta) Bitboard {
-	own := b.OccupiedByColor(b.ColorToMove)
-	occupied := b.Occupied()
-
-	var moves Bitboard
-	for _, delta := range deltas {
-		file := int8(from.File())
-		rank := int8(from.Rank())
-
-		for {
-			file += delta.File
-			rank += delta.Rank
-			if file < 0 || file > 7 || rank < 0 || rank > 7 {
-				break
-			}
-
-			to := Square(file + rank*8)
-			if own&to.Mask() != 0 {
-				break
-			}
-
-			moves |= to.Mask()
-
-			if occupied&to.Mask() != 0 {
-				break
-			}
-		}
-	}
-
-	return moves
+func slidingMoveDestinationsFrom(b Board, from Square, deltas []MoveDelta) Bitboard {
+	attacks := slidingAttacksFrom(b, from, deltas)
+	return attacks &^ b.OccupiedByColor(b.ColorToMove)
 }
 
 func slidingAttacksFrom(b Board, from Square, deltas []MoveDelta) Bitboard {
 	occupied := b.Occupied()
 
-	var moves Bitboard
+	var attacks Bitboard
 	for _, delta := range deltas {
 		file := int8(from.File())
 		rank := int8(from.Rank())
@@ -118,7 +93,7 @@ func slidingAttacksFrom(b Board, from Square, deltas []MoveDelta) Bitboard {
 			}
 
 			to := Square(file + rank*8)
-			moves |= to.Mask()
+			attacks |= to.Mask()
 
 			if occupied&to.Mask() != 0 {
 				break
@@ -126,7 +101,7 @@ func slidingAttacksFrom(b Board, from Square, deltas []MoveDelta) Bitboard {
 		}
 	}
 
-	return moves
+	return attacks
 }
 
 type Move uint16
