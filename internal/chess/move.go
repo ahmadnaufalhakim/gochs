@@ -155,3 +155,14 @@ func GenerateRookMoves(b Board) Bitboard {
 
 	return moves
 }
+
+func GenerateQueenMoves(b Board) Bitboard {
+	var moves Bitboard
+	for from := a1; from <= h8; from++ {
+		if b.Pieces[b.ColorToMove][Queen]&from.Mask() != 0 {
+			moves |= slidingMovesFrom(b, from, append(bishopMoveDelta, rookMoveDelta...))
+		}
+	}
+
+	return moves
+}
