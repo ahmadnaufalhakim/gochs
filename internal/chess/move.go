@@ -20,6 +20,7 @@ var (
 		{File: 0, Rank: -1}, {File: -1, Rank: 0},
 		{File: 1, Rank: 0}, {File: 0, Rank: 1},
 	}
+	queenMoveDeltas = append(bishopMoveDeltas, rookMoveDeltas...)
 )
 
 func allowedSources(delta MoveDelta) Bitboard {
@@ -167,7 +168,7 @@ func GenerateQueenMoves(b Board) Bitboard {
 
 	for from := a1; from <= h8; from++ {
 		if queens&from.Mask() != 0 {
-			moves |= slidingMovesFrom(b, from, append(bishopMoveDeltas, rookMoveDeltas...))
+			moves |= slidingMovesFrom(b, from, queenMoveDeltas)
 		}
 	}
 
@@ -178,7 +179,7 @@ func GenerateKingMoves(b Board) Bitboard {
 	var moves Bitboard
 	king := b.Pieces[b.ColorToMove][King]
 
-	for _, delta := range append(bishopMoveDeltas, rookMoveDeltas...) {
+	for _, delta := range queenMoveDeltas {
 		sources := king & allowedSources(delta)
 
 		shift := delta.File + delta.Rank*8
