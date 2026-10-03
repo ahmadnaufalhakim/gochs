@@ -21,6 +21,10 @@ const (
 	PieceColorCount
 )
 
+func (c PieceColor) Opponent() PieceColor {
+	return c ^ 1
+}
+
 type Piece struct {
 	Color PieceColor
 	Type  PieceType
