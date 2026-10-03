@@ -6,6 +6,18 @@ type MoveDelta struct {
 }
 
 var (
+	pawnMoveDelta = [PieceColorCount]MoveDelta{
+		White: {File: 0, Rank: 1},
+		Black: {File: 0, Rank: -1},
+	}
+	pawnAttackMoveDeltas = [PieceColorCount][]MoveDelta{
+		White: {
+			{File: -1, Rank: 1}, {File: 1, Rank: 1},
+		},
+		Black: {
+			{File: -1, Rank: -1}, {File: 1, Rank: -1},
+		},
+	}
 	knightMoveDeltas = []MoveDelta{
 		{File: -1, Rank: -2}, {File: 1, Rank: -2},
 		{File: -2, Rank: -1}, {File: 2, Rank: -1},
@@ -21,6 +33,11 @@ var (
 		{File: 1, Rank: 0}, {File: 0, Rank: 1},
 	}
 	queenMoveDeltas = append(bishopMoveDeltas, rookMoveDeltas...)
+
+	pawnDoublePushDestinationRank = [PieceColorCount]Bitboard{
+		White: rank4,
+		Black: rank5,
+	}
 )
 
 func allowedSources(delta MoveDelta) Bitboard {
@@ -92,28 +109,23 @@ type Move struct {
 }
 
 func GeneratePawnMoves(b Board) Bitboard {
-	unoccupied := ^b.Occupied()
+	var moves Bitboard
 	pawns := b.Pieces[b.ColorToMove][Pawn]
+	occupied := b.Occupied()
+	shift := pawnMoveDelta[b.ColorToMove].File + pawnMoveDelta[b.ColorToMove].Rank*8
 
-	var pawnSinglePushFn func(pawns Bitboard) Bitboard
-	var doublePushDestinationRank Bitboard
-	switch b.ColorToMove {
-	case White:
-		pawnSinglePushFn = func(pawns Bitboard) Bitboard {
-			return (pawns << 8)
-		}
-		doublePushDestinationRank = rank4
-	case Black:
-		pawnSinglePushFn = func(pawns Bitboard) Bitboard {
-			return (pawns >> 8)
-		}
-		doublePushDestinationRank = rank5
+	var pawnSinglePushes, pawnDoublePushes Bitboard
+	if shift > 0 {
+		pawnSinglePushes = (pawns << shift) & ^occupied
+		pawnDoublePushes = (pawnSinglePushes << shift) & ^occupied & pawnDoublePushDestinationRank[b.ColorToMove]
+	} else {
+		pawnSinglePushes = (pawns >> -shift) & ^occupied
+		pawnDoublePushes = (pawnSinglePushes >> -shift) & ^occupied & pawnDoublePushDestinationRank[b.ColorToMove]
 	}
 
-	pawnSinglePushes := pawnSinglePushFn(pawns) & unoccupied
-	pawnDoublePushes := pawnSinglePushFn(pawnSinglePushes) & unoccupied & doublePushDestinationRank
+	moves |= pawnSinglePushes | pawnDoublePushes
 
-	return pawnSinglePushes | pawnDoublePushes
+	return moves
 }
 
 func GenerateKnightMoves(b Board) Bitboard {
