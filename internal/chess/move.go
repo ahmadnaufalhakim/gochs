@@ -6,17 +6,17 @@ type MoveDelta struct {
 }
 
 var (
-	knightMoveDelta = []MoveDelta{
+	knightMoveDeltas = []MoveDelta{
 		{File: -1, Rank: -2}, {File: 1, Rank: -2},
 		{File: -2, Rank: -1}, {File: 2, Rank: -1},
 		{File: -2, Rank: 1}, {File: 2, Rank: 1},
 		{File: -1, Rank: 2}, {File: 1, Rank: 2},
 	}
-	bishopMoveDelta = []MoveDelta{
+	bishopMoveDeltas = []MoveDelta{
 		{File: -1, Rank: -1}, {File: 1, Rank: -1},
 		{File: -1, Rank: 1}, {File: 1, Rank: 1},
 	}
-	rookMoveDelta = []MoveDelta{
+	rookMoveDeltas = []MoveDelta{
 		{File: 0, Rank: -1}, {File: -1, Rank: 0},
 		{File: 1, Rank: 0}, {File: 0, Rank: 1},
 	}
@@ -119,7 +119,7 @@ func GenerateKnightMoves(b Board) Bitboard {
 	var moves Bitboard
 	knights := b.Pieces[b.ColorToMove][Knight]
 
-	for _, delta := range knightMoveDelta {
+	for _, delta := range knightMoveDeltas {
 		sources := knights & allowedSources(delta)
 
 		shift := delta.File + delta.Rank*8
@@ -141,7 +141,7 @@ func GenerateBishopMoves(b Board) Bitboard {
 
 	for from := a1; from <= h8; from++ {
 		if bishops&from.Mask() != 0 {
-			moves |= slidingMovesFrom(b, from, bishopMoveDelta)
+			moves |= slidingMovesFrom(b, from, bishopMoveDeltas)
 		}
 	}
 
@@ -154,7 +154,7 @@ func GenerateRookMoves(b Board) Bitboard {
 
 	for from := a1; from <= h8; from++ {
 		if rooks&from.Mask() != 0 {
-			moves |= slidingMovesFrom(b, from, rookMoveDelta)
+			moves |= slidingMovesFrom(b, from, rookMoveDeltas)
 		}
 	}
 
@@ -167,7 +167,7 @@ func GenerateQueenMoves(b Board) Bitboard {
 
 	for from := a1; from <= h8; from++ {
 		if queens&from.Mask() != 0 {
-			moves |= slidingMovesFrom(b, from, append(bishopMoveDelta, rookMoveDelta...))
+			moves |= slidingMovesFrom(b, from, append(bishopMoveDeltas, rookMoveDeltas...))
 		}
 	}
 
@@ -178,7 +178,7 @@ func GenerateKingMoves(b Board) Bitboard {
 	var moves Bitboard
 	king := b.Pieces[b.ColorToMove][King]
 
-	for _, delta := range append(bishopMoveDelta, rookMoveDelta...) {
+	for _, delta := range append(bishopMoveDeltas, rookMoveDeltas...) {
 		sources := king & allowedSources(delta)
 
 		shift := delta.File + delta.Rank*8
