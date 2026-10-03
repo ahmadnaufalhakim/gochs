@@ -5,12 +5,22 @@ type MoveDelta struct {
 	Rank int8
 }
 
-var knightMoveDelta = []MoveDelta{
-	{File: -1, Rank: -2}, {File: 1, Rank: -2},
-	{File: -2, Rank: -1}, {File: 2, Rank: -1},
-	{File: -2, Rank: 1}, {File: 2, Rank: 1},
-	{File: -1, Rank: 2}, {File: 1, Rank: 2},
-}
+var (
+	knightMoveDelta = []MoveDelta{
+		{File: -1, Rank: -2}, {File: 1, Rank: -2},
+		{File: -2, Rank: -1}, {File: 2, Rank: -1},
+		{File: -2, Rank: 1}, {File: 2, Rank: 1},
+		{File: -1, Rank: 2}, {File: 1, Rank: 2},
+	}
+	bishopMoveDelta = []MoveDelta{
+		{File: -1, Rank: -1}, {File: 1, Rank: -1},
+		{File: -1, Rank: 1}, {File: 1, Rank: 1},
+	}
+	rookMoveDelta = []MoveDelta{
+		{File: 0, Rank: -1}, {File: -1, Rank: 0},
+		{File: 1, Rank: 0}, {File: 0, Rank: 1},
+	}
+)
 
 func allowedSources(delta MoveDelta) Bitboard {
 	var sources Bitboard
