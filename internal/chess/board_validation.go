@@ -31,3 +31,12 @@ func (b *Board) validatePawnPositions() error {
 
 	return nil
 }
+
+func (b *Board) validateKingCount() error {
+	if !b.Pieces[b.ColorToMove][King].IsSingleBit() ||
+		!b.Pieces[b.ColorToMove.Opponent()][King].IsSingleBit() {
+		return errors.New("each side must have exactly one king")
+	}
+
+	return nil
+}

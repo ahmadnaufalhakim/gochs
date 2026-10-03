@@ -182,6 +182,9 @@ func (b *Board) SetPieceAt(s Square, p Piece) {
 }
 
 func (b *Board) Validate() error {
+	if err := b.validateKingCount(); err != nil {
+		return err
+	}
 	if err := b.validatePawnPositions(); err != nil {
 		return err
 	}
