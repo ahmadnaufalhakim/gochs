@@ -285,3 +285,23 @@ func (b *Board) IsSquareAttackedBy(s Square, by PieceColor) bool {
 
 	return false
 }
+
+func (b *Board) applyMove(m Move) {
+	movingPiece := b.PieceAt(m.From())
+	b.ClearSquare(m.From())
+	if movingPiece.Type == Pawn &&
+		pawnPromotionRank[movingPiece.Color]&m.To().Mask() != 0 {
+		switch m.Flag() {
+		case PromoteKnight, PromoteCaptureKnight:
+			movingPiece.Type = Knight
+		case PromoteBishop, PromoteCaptureBishop:
+			movingPiece.Type = Bishop
+		case PromoteRook, PromoteCaptureRook:
+			movingPiece.Type = Rook
+		case PromoteQueen, PromoteCaptureQueen:
+			movingPiece.Type = Queen
+		}
+	}
+	b.SetPieceAt(m.To(), movingPiece)
+	b.ColorToMove = b.ColorToMove.Opponent()
+}
