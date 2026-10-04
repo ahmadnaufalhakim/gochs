@@ -36,9 +36,17 @@ var (
 	}
 	queenMoveDeltas = append(bishopMoveDeltas, rookMoveDeltas...)
 
+	pawnDoublePushSourceRank = [PieceColorCount]Bitboard{
+		White: rank2,
+		Black: rank7,
+	}
 	pawnDoublePushDestinationRank = [PieceColorCount]Bitboard{
 		White: rank4,
 		Black: rank5,
+	}
+	pawnPromotionRank = [PieceColorCount]Bitboard{
+		White: rank8,
+		Black: rank1,
 	}
 )
 
@@ -241,6 +249,52 @@ func GeneratePawnAttacks(b Board, c PieceColor) Bitboard {
 	}
 
 	return attacks
+}
+
+func GeneratePawnPseudoLegalMoves(b Board, color PieceColor) []Move {
+	var moves []Move
+	pawns := b.Pieces[color][Pawn]
+	delta := pawnMoveDelta[color]
+
+	for from := a1; from <= h8; from++ {
+		if pawns&from.Mask() == 0 {
+			continue
+		}
+
+		source := from.Mask() & allowedSources(pawnMoveDelta[color])
+		if source == 0 {
+			continue
+		}
+
+		toFile := int8(from.File()) + delta.File
+		toRank := int8(from.Rank()) + delta.Rank
+		to := Square(toFile + toRank*8)
+		toPiece := b.PieceAt(to)
+		if toPiece.Type != PieceNone {
+			continue
+		}
+
+		if pawnPromotionRank[color]&to.Mask() != 0 {
+			moves = append(moves, NewMove(from, to, PromoteKnight))
+			moves = append(moves, NewMove(from, to, PromoteBishop))
+			moves = append(moves, NewMove(from, to, PromoteRook))
+			moves = append(moves, NewMove(from, to, PromoteQueen))
+		} else {
+			moves = append(moves, NewMove(from, to, QuietMove))
+		}
+
+		if pawnDoublePushSourceRank[color]&from.Mask() != 0 {
+			doubleToFile := toFile + delta.File
+			doubleToRank := toRank + delta.Rank
+			doubleTo := Square(doubleToFile + doubleToRank*8)
+			totoPiece := b.PieceAt(doubleTo)
+			if totoPiece.Type == PieceNone {
+				moves = append(moves, NewMove(from, doubleTo, DoublePawnPush))
+			}
+		}
+	}
+
+	return moves
 }
 
 func GenerateKnightMoveDestinations(b Board) Bitboard {
