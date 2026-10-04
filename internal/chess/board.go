@@ -116,8 +116,23 @@ func ParseCoordinate(coordinate string) (Square, error) {
 	return Square(file + rank*8), nil
 }
 
+type CastlingSide uint8
+
+const (
+	QueenSide CastlingSide = iota
+	KingSide
+	CastlingSideCount
+)
+
+type CastlingRight struct {
+	KingFrom  Square
+	RookFrom  Square
+	Available bool
+}
+
 type Board struct {
 	Pieces          [PieceColorCount][PieceTypeCount]Bitboard
+	CastlingRights  [PieceColorCount][CastlingSideCount]CastlingRight
 	EnPassantTarget Bitboard
 	ColorToMove     PieceColor
 }
@@ -140,7 +155,7 @@ func (b *Board) ClearSquare(s Square) {
 	}
 }
 
-var startingPositions = [PieceColorCount][PieceTypeCount]Bitboard{
+var defaultStartingPieces = [PieceColorCount][PieceTypeCount]Bitboard{
 	White: {
 		Pawn:   rank2,
 		Knight: b1.Mask() | g1.Mask(),
@@ -160,7 +175,7 @@ var startingPositions = [PieceColorCount][PieceTypeCount]Bitboard{
 }
 
 func (b *Board) Reset() {
-	b.Pieces = startingPositions
+	b.Pieces = defaultStartingPieces
 	b.EnPassantTarget = Bitboard(0)
 	b.ColorToMove = White
 }
