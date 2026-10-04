@@ -322,6 +322,8 @@ func TestInitialPositionPerft(t *testing.T) {
 		{1, 20},
 		{2, 400},
 		{3, 8902},
+		{4, 197281},
+		{5, 4865609},
 	}
 
 	for _, test := range tests {
