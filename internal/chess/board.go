@@ -2,6 +2,8 @@ package chess
 
 import (
 	"errors"
+	"fmt"
+	"slices"
 )
 
 type Square uint8
@@ -304,4 +306,14 @@ func (b *Board) applyMove(m Move) {
 	}
 	b.SetPieceAt(m.To(), movingPiece)
 	b.ColorToMove = b.ColorToMove.Opponent()
+}
+
+func (b *Board) MakeMove(m Move) error {
+	legalMoves := GenerateLegalMoves(*b)
+	if slices.Contains(legalMoves, m) {
+		b.applyMove(m)
+		return nil
+	}
+
+	return fmt.Errorf("%s is an illegal move", m.String())
 }
