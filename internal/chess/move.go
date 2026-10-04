@@ -80,11 +80,6 @@ func allowedSources(delta MoveDelta) Bitboard {
 	return sources
 }
 
-func slidingMoveDestinationsFrom(b Board, from Square, deltas []MoveDelta) Bitboard {
-	attacks := slidingAttacksFrom(b, from, deltas)
-	return attacks &^ b.OccupiedByColor(b.ColorToMove)
-}
-
 func slidingAttacksFrom(b Board, from Square, deltas []MoveDelta) Bitboard {
 	occupied := b.Occupied()
 
