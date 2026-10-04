@@ -580,3 +580,19 @@ func GeneratePseudoLegalMoves(b Board, color PieceColor) []Move {
 
 	return moves
 }
+
+func GenerateLegalMoves(b Board) []Move {
+	var legalMoves []Move
+	movingColor := b.ColorToMove
+	pseudoMoves := GeneratePseudoLegalMoves(b, movingColor)
+
+	for _, pseudoMove := range pseudoMoves {
+		nextBoard := b
+		nextBoard.applyMove(pseudoMove)
+		if !nextBoard.IsColorInCheck(movingColor) {
+			legalMoves = append(legalMoves, pseudoMove)
+		}
+	}
+
+	return legalMoves
+}
