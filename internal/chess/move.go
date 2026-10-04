@@ -255,6 +255,7 @@ func GeneratePawnPseudoLegalMoves(b Board, color PieceColor) []Move {
 	var moves []Move
 	pawns := b.Pieces[color][Pawn]
 	delta := pawnMoveDelta[color]
+	occupied := b.Occupied()
 
 	for from := a1; from <= h8; from++ {
 		if pawns&from.Mask() == 0 {
@@ -269,8 +270,7 @@ func GeneratePawnPseudoLegalMoves(b Board, color PieceColor) []Move {
 		toFile := int8(from.File()) + delta.File
 		toRank := int8(from.Rank()) + delta.Rank
 		to := Square(toFile + toRank*8)
-		toPiece := b.PieceAt(to)
-		if toPiece.Type != PieceNone {
+		if occupied&to.Mask() != 0 {
 			continue
 		}
 
@@ -287,8 +287,7 @@ func GeneratePawnPseudoLegalMoves(b Board, color PieceColor) []Move {
 			doubleToFile := toFile + delta.File
 			doubleToRank := toRank + delta.Rank
 			doubleTo := Square(doubleToFile + doubleToRank*8)
-			totoPiece := b.PieceAt(doubleTo)
-			if totoPiece.Type == PieceNone {
+			if occupied&doubleTo.Mask() == 0 {
 				moves = append(moves, NewMove(from, doubleTo, DoublePawnPush))
 			}
 		}
