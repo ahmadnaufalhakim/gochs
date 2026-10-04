@@ -40,10 +40,6 @@ var (
 		White: rank2,
 		Black: rank7,
 	}
-	pawnDoublePushDestinationRank = [PieceColorCount]Bitboard{
-		White: rank4,
-		Black: rank5,
-	}
 	pawnPromotionRank = [PieceColorCount]Bitboard{
 		White: rank8,
 		Black: rank1,
