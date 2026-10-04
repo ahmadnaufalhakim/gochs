@@ -256,6 +256,7 @@ func GeneratePawnPseudoLegalMoves(b Board, color PieceColor) []Move {
 	pawns := b.Pieces[color][Pawn]
 	delta := pawnMoveDelta[color]
 	occupied := b.Occupied()
+	capturableOpponentPieces := b.OccupiedByColor(color.Opponent()) & ^b.Pieces[color.Opponent()][King]
 
 	for from := a1; from <= h8; from++ {
 		if pawns&from.Mask() == 0 {
@@ -270,25 +271,44 @@ func GeneratePawnPseudoLegalMoves(b Board, color PieceColor) []Move {
 		toFile := int8(from.File()) + delta.File
 		toRank := int8(from.Rank()) + delta.Rank
 		to := Square(toFile + toRank*8)
-		if occupied&to.Mask() != 0 {
-			continue
+		if occupied&to.Mask() == 0 {
+			if pawnPromotionRank[color]&to.Mask() != 0 {
+				moves = append(moves, NewMove(from, to, PromoteKnight))
+				moves = append(moves, NewMove(from, to, PromoteBishop))
+				moves = append(moves, NewMove(from, to, PromoteRook))
+				moves = append(moves, NewMove(from, to, PromoteQueen))
+			} else {
+				moves = append(moves, NewMove(from, to, QuietMove))
+			}
+
+			if pawnDoublePushSourceRank[color]&from.Mask() != 0 {
+				doubleToFile := toFile + delta.File
+				doubleToRank := toRank + delta.Rank
+				doubleTo := Square(doubleToFile + doubleToRank*8)
+				if occupied&doubleTo.Mask() == 0 {
+					moves = append(moves, NewMove(from, doubleTo, DoublePawnPush))
+				}
+			}
 		}
 
-		if pawnPromotionRank[color]&to.Mask() != 0 {
-			moves = append(moves, NewMove(from, to, PromoteKnight))
-			moves = append(moves, NewMove(from, to, PromoteBishop))
-			moves = append(moves, NewMove(from, to, PromoteRook))
-			moves = append(moves, NewMove(from, to, PromoteQueen))
-		} else {
-			moves = append(moves, NewMove(from, to, QuietMove))
-		}
+		for _, delta := range pawnAttackMoveDeltas[color] {
+			attackSource := from.Mask() & allowedSources(delta)
+			if attackSource == 0 {
+				continue
+			}
 
-		if pawnDoublePushSourceRank[color]&from.Mask() != 0 {
-			doubleToFile := toFile + delta.File
-			doubleToRank := toRank + delta.Rank
-			doubleTo := Square(doubleToFile + doubleToRank*8)
-			if occupied&doubleTo.Mask() == 0 {
-				moves = append(moves, NewMove(from, doubleTo, DoublePawnPush))
+			attackFile := int8(from.File()) + delta.File
+			attackRank := int8(from.Rank()) + delta.Rank
+			attackTo := Square(attackFile + attackRank*8)
+			if capturableOpponentPieces&attackTo.Mask() != 0 {
+				if pawnPromotionRank[color]&attackTo.Mask() != 0 {
+					moves = append(moves, NewMove(from, attackTo, PromoteCaptureKnight))
+					moves = append(moves, NewMove(from, attackTo, PromoteCaptureBishop))
+					moves = append(moves, NewMove(from, attackTo, PromoteCaptureRook))
+					moves = append(moves, NewMove(from, attackTo, PromoteCaptureQueen))
+				} else {
+					moves = append(moves, NewMove(from, attackTo, Capture))
+				}
 			}
 		}
 	}
