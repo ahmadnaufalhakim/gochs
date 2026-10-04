@@ -514,13 +514,13 @@ func GenerateJumpPseudoLegalMoves(
 			rank := int8(from.Rank()) + delta.Rank
 			to := Square(file + rank*8)
 			toPiece := b.PieceAt(to)
-			if toPiece.Type != PieceNone {
-				if toPiece.Color != color && toPiece.Type != King {
-					moves = append(moves, NewMove(from, to, Capture))
-				}
-				break
+			if toPiece.Type == PieceNone {
+				moves = append(moves, NewMove(from, to, QuietMove))
+				continue
 			}
-			moves = append(moves, NewMove(from, to, QuietMove))
+			if toPiece.Color != color && toPiece.Type != King {
+				moves = append(moves, NewMove(from, to, Capture))
+			}
 		}
 	}
 
@@ -564,6 +564,19 @@ func GenerateSlidePseudoLegalMoves(
 			}
 		}
 	}
+
+	return moves
+}
+
+func GeneratePseudoLegalMoves(b Board, color PieceColor) []Move {
+	var moves []Move
+
+	moves = append(moves, GeneratePawnPseudoLegalMoves(b, color)...)
+	moves = append(moves, GenerateKnightPseudoLegalMoves(b, color)...)
+	moves = append(moves, GenerateBishopPseudoLegalMoves(b, color)...)
+	moves = append(moves, GenerateRookPseudoLegalMoves(b, color)...)
+	moves = append(moves, GenerateQueenPseudoLegalMoves(b, color)...)
+	moves = append(moves, GenerateKingPseudoLegalMoves(b, color)...)
 
 	return moves
 }
