@@ -1,97 +1,144 @@
 package app
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
+	"io"
+	"os"
+	"strings"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 )
 
 func Run() {
-	fmt.Println("Hello from gochs!")
-
-	var r chess.Renderer
-	r.Theme = chess.WOOD
-	r.Perspective = chess.White
-
-	var b chess.Board
-	b.Clear()
-	b.ColorToMove = chess.White
-
-	inpPairs := []struct {
-		coord     string
-		color     chess.PieceColor
-		pieceType chess.PieceType
-	}{
-		{coord: "a3", color: chess.White, pieceType: chess.Pawn},
-		{coord: "b2", color: chess.White, pieceType: chess.Pawn},
-		{coord: "b3", color: chess.Black, pieceType: chess.Knight},
-		{coord: "c2", color: chess.White, pieceType: chess.Pawn},
-		{coord: "d4", color: chess.Black, pieceType: chess.Knight},
-		{coord: "e2", color: chess.Black, pieceType: chess.Pawn},
-
-		{coord: "e5", color: chess.White, pieceType: chess.Pawn},
-		{coord: "f1", color: chess.White, pieceType: chess.Rook},
-		{coord: "f5", color: chess.White, pieceType: chess.King},
-		{coord: "g2", color: chess.White, pieceType: chess.Pawn},
-		{coord: "g3", color: chess.White, pieceType: chess.Pawn},
-		{coord: "h2", color: chess.White, pieceType: chess.Pawn},
-
-		{coord: "e7", color: chess.Black, pieceType: chess.King},
-
-		{coord: "a7", color: chess.White, pieceType: chess.Pawn},
-		{coord: "b8", color: chess.Black, pieceType: chess.Queen},
+	reader := bufio.NewReader(os.Stdin)
+	renderer := chess.Renderer{
+		Theme:       chess.WOOD,
+		Perspective: chess.White,
 	}
-	// inpPairs := []struct {
-	// 	coord     string
-	// 	color     chess.PieceColor
-	// 	pieceType chess.PieceType
-	// }{
-	// 	{coord: "c4", color: chess.Black, pieceType: chess.King},
-	// 	{coord: "c5", color: chess.Black, pieceType: chess.Pawn},
-	// }
 
-	for _, pair := range inpPairs {
-		square, err := chess.ParseCoordinate(pair.coord)
-		if err != nil {
-			panic(err)
+	var board chess.Board
+	board.Reset()
+
+	fmt.Println("gochs")
+	fmt.Println("Enter lowercase coordinates when prompted, or type quit to exit.")
+
+	for {
+		fmt.Println()
+		renderer.Print(board)
+
+		legalMoves := chess.GenerateLegalMoves(board)
+		if len(legalMoves) == 0 {
+			if board.IsColorInCheck(board.ColorToMove) {
+				fmt.Printf("Checkmate. %s wins.\n", board.ColorToMove.Opponent())
+			} else {
+				fmt.Println("Stalemate.")
+			}
+			return
 		}
-		b.SetPieceAt(square, chess.Piece{
-			Color: pair.color,
-			Type:  pair.pieceType,
-		})
+
+		if board.IsColorInCheck(board.ColorToMove) {
+			fmt.Println("Check.")
+		}
+
+		from, ok := readSquare(reader, fmt.Sprintf("%s to move. From: ", board.ColorToMove))
+		if !ok {
+			return
+		}
+
+		to, ok := readSquare(reader, "To: ")
+		if !ok {
+			return
+		}
+
+		move, err := selectMove(reader, legalMoves, from, to)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+
+		if err := board.MakeMove(move); err != nil {
+			fmt.Println(err)
+		}
+	}
+}
+
+func readSquare(reader *bufio.Reader, prompt string) (chess.Square, bool) {
+	for {
+		fmt.Print(prompt)
+
+		input, err := reader.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			fmt.Printf("Could not read input: %v\n", err)
+			return chess.Square(0), false
+		}
+
+		input = strings.TrimSpace(input)
+		if input == "quit" || (errors.Is(err, io.EOF) && input == "") {
+			return chess.Square(0), false
+		}
+
+		square, parseErr := chess.ParseCoordinate(input)
+		if parseErr == nil {
+			return square, true
+		}
+
+		fmt.Printf("Invalid square %q: %v\n", input, parseErr)
+		if errors.Is(err, io.EOF) {
+			return chess.Square(0), false
+		}
+	}
+}
+
+func selectMove(reader *bufio.Reader, legalMoves []chess.Move, from, to chess.Square) (chess.Move, error) {
+	candidates := make([]chess.Move, 0, 4)
+	for _, move := range legalMoves {
+		if move.From() == from && move.To() == to {
+			candidates = append(candidates, move)
+		}
 	}
 
-	r.Print(b)
+	switch len(candidates) {
+	case 0:
+		return chess.Move(0), fmt.Errorf("%s-%s is not a legal move", from, to)
+	case 1:
+		return candidates[0], nil
+	}
 
-	fmt.Println(chess.GenerateLegalMoves(b))
-	err := b.MakeMove(chess.NewMove(chess.Square(37), chess.Square(28), chess.QuietMove))
-	fmt.Println(err)
-	r.Print(b)
-	fmt.Println(b.Validate())
-	fmt.Println(b.IsColorInCheck(b.ColorToMove))
-	fmt.Println(b.ColorToMove.String())
+	for {
+		fmt.Print("Promote to [n/b/r/q]: ")
+		input, err := reader.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return chess.Move(0), fmt.Errorf("could not read promotion: %w", err)
+		}
 
-	fmt.Println(chess.GenerateLegalMoves(b))
-	err = b.MakeMove(chess.NewMove(chess.Square(17), chess.Square(34), chess.QuietMove))
-	fmt.Println(err)
-	r.Print(b)
-	fmt.Println(b.Validate())
-	fmt.Println(b.IsColorInCheck(b.ColorToMove))
-	fmt.Println(b.ColorToMove.String())
+		input = strings.TrimSpace(input)
+		if input == "quit" || (errors.Is(err, io.EOF) && input == "") {
+			return chess.Move(0), errors.New("promotion cancelled")
+		}
 
-	fmt.Println(chess.GenerateLegalMoves(b))
-	err = b.MakeMove(chess.NewMove(chess.Square(28), chess.Square(35), chess.QuietMove))
-	fmt.Println(err)
-	r.Print(b)
-	fmt.Println(b.Validate())
-	fmt.Println(b.IsColorInCheck(b.ColorToMove))
-	fmt.Println(b.ColorToMove.String())
+		for _, move := range candidates {
+			if promotionInputMatches(input, move.Flag()) {
+				return move, nil
+			}
+		}
 
-	fmt.Println(chess.GenerateLegalMoves(b))
-	err = b.MakeMove(chess.NewMove(chess.Square(52), chess.Square(45), chess.QuietMove))
-	fmt.Println(err)
-	r.Print(b)
-	fmt.Println(b.Validate())
-	fmt.Println(b.IsColorInCheck(b.ColorToMove))
-	fmt.Println(b.ColorToMove.String())
+		fmt.Println("Invalid promotion piece. Enter n, b, r, or q.")
+	}
+}
+
+func promotionInputMatches(input string, flag chess.MoveFlag) bool {
+	switch input {
+	case "n":
+		return flag == chess.PromoteKnight || flag == chess.PromoteCaptureKnight
+	case "b":
+		return flag == chess.PromoteBishop || flag == chess.PromoteCaptureBishop
+	case "r":
+		return flag == chess.PromoteRook || flag == chess.PromoteCaptureRook
+	case "q":
+		return flag == chess.PromoteQueen || flag == chess.PromoteCaptureQueen
+	default:
+		return false
+	}
 }
