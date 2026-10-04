@@ -192,47 +192,6 @@ func (m Move) Print() {
 	fmt.Println(m)
 }
 
-func GeneratePawnMoveDestinations(b Board) Bitboard {
-	var moves Bitboard
-	pawns := b.Pieces[b.ColorToMove][Pawn]
-	occupied := b.Occupied()
-	shift := pawnMoveDelta[b.ColorToMove].File + pawnMoveDelta[b.ColorToMove].Rank*8
-
-	var pawnSinglePushes, pawnDoublePushes Bitboard
-	if shift > 0 {
-		pawnSinglePushes = (pawns << shift) & ^occupied
-		pawnDoublePushes = (pawnSinglePushes << shift) & ^occupied & pawnDoublePushDestinationRank[b.ColorToMove]
-	} else {
-		pawnSinglePushes = (pawns >> -shift) & ^occupied
-		pawnDoublePushes = (pawnSinglePushes >> -shift) & ^occupied & pawnDoublePushDestinationRank[b.ColorToMove]
-	}
-
-	moves |= pawnSinglePushes | pawnDoublePushes
-
-	return moves
-}
-
-func GeneratePawnCaptureMoveDestinations(b Board) Bitboard {
-	var moves Bitboard
-	pawns := b.Pieces[b.ColorToMove][Pawn]
-	occupiedByOpponent := b.OccupiedByColor(b.ColorToMove.Opponent())
-
-	for _, delta := range pawnAttackMoveDeltas[b.ColorToMove] {
-		sources := pawns & allowedSources(delta)
-		shift := delta.File + delta.Rank*8
-
-		if shift > 0 {
-			moves |= sources << shift
-		} else {
-			moves |= sources >> -shift
-		}
-	}
-
-	moves &= occupiedByOpponent
-
-	return moves
-}
-
 func GeneratePawnAttacks(b Board, c PieceColor) Bitboard {
 	var attacks Bitboard
 	pawns := b.Pieces[c][Pawn]
@@ -316,26 +275,6 @@ func GeneratePawnPseudoLegalMoves(b Board, color PieceColor) []Move {
 	return moves
 }
 
-func GenerateKnightMoveDestinations(b Board) Bitboard {
-	var moves Bitboard
-	knights := b.Pieces[b.ColorToMove][Knight]
-
-	for _, delta := range knightMoveDeltas {
-		sources := knights & allowedSources(delta)
-		shift := delta.File + delta.Rank*8
-
-		if shift > 0 {
-			moves |= sources << shift
-		} else {
-			moves |= sources >> -shift
-		}
-	}
-
-	moves &^= b.OccupiedByColor(b.ColorToMove)
-
-	return moves
-}
-
 func GenerateKnightAttacks(b Board, c PieceColor) Bitboard {
 	var attacks Bitboard
 	knights := b.Pieces[c][Knight]
@@ -358,19 +297,6 @@ func GenerateKnightPseudoLegalMoves(b Board, color PieceColor) []Move {
 	return GenerateJumpPseudoLegalMoves(b, color, Knight, knightMoveDeltas)
 }
 
-func GenerateBishopMoveDestinations(b Board) Bitboard {
-	var moves Bitboard
-	bishops := b.Pieces[b.ColorToMove][Bishop]
-
-	for from := a1; from <= h8; from++ {
-		if bishops&from.Mask() != 0 {
-			moves |= slidingMoveDestinationsFrom(b, from, bishopMoveDeltas)
-		}
-	}
-
-	return moves
-}
-
 func GenerateBishopAttacks(b Board, c PieceColor) Bitboard {
 	var attacks Bitboard
 	bishops := b.Pieces[c][Bishop]
@@ -386,19 +312,6 @@ func GenerateBishopAttacks(b Board, c PieceColor) Bitboard {
 
 func GenerateBishopPseudoLegalMoves(b Board, color PieceColor) []Move {
 	return GenerateSlidePseudoLegalMoves(b, color, Bishop, bishopMoveDeltas)
-}
-
-func GenerateRookMoveDestinations(b Board) Bitboard {
-	var moves Bitboard
-	rooks := b.Pieces[b.ColorToMove][Rook]
-
-	for from := a1; from <= h8; from++ {
-		if rooks&from.Mask() != 0 {
-			moves |= slidingMoveDestinationsFrom(b, from, rookMoveDeltas)
-		}
-	}
-
-	return moves
 }
 
 func GenerateRookAttacks(b Board, c PieceColor) Bitboard {
@@ -418,19 +331,6 @@ func GenerateRookPseudoLegalMoves(b Board, color PieceColor) []Move {
 	return GenerateSlidePseudoLegalMoves(b, color, Rook, rookMoveDeltas)
 }
 
-func GenerateQueenMoveDestinations(b Board) Bitboard {
-	var moves Bitboard
-	queens := b.Pieces[b.ColorToMove][Queen]
-
-	for from := a1; from <= h8; from++ {
-		if queens&from.Mask() != 0 {
-			moves |= slidingMoveDestinationsFrom(b, from, queenMoveDeltas)
-		}
-	}
-
-	return moves
-}
-
 func GenerateQueenAttacks(b Board, c PieceColor) Bitboard {
 	var attacks Bitboard
 	queens := b.Pieces[c][Queen]
@@ -446,26 +346,6 @@ func GenerateQueenAttacks(b Board, c PieceColor) Bitboard {
 
 func GenerateQueenPseudoLegalMoves(b Board, color PieceColor) []Move {
 	return GenerateSlidePseudoLegalMoves(b, color, Queen, queenMoveDeltas)
-}
-
-func GenerateKingMoveDestinations(b Board) Bitboard {
-	var moves Bitboard
-	king := b.Pieces[b.ColorToMove][King]
-
-	for _, delta := range queenMoveDeltas {
-		sources := king & allowedSources(delta)
-		shift := delta.File + delta.Rank*8
-
-		if shift > 0 {
-			moves |= sources << shift
-		} else {
-			moves |= sources >> -shift
-		}
-	}
-
-	moves &^= b.OccupiedByColor(b.ColorToMove)
-
-	return moves
 }
 
 func GenerateKingAttacks(b Board, c PieceColor) Bitboard {
