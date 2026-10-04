@@ -1,6 +1,9 @@
 package chess
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRendererSquareBackground(t *testing.T) {
 	tests := []struct {
@@ -74,5 +77,21 @@ func TestPieceForeground(t *testing.T) {
 	}
 	if got := pieceForeground(Piece{Color: Black, Type: King}); got != blackPieceColor {
 		t.Errorf("black piece foreground = %q, want %q", got, blackPieceColor)
+	}
+}
+
+func TestRendererPrint(t *testing.T) {
+	var board Board
+	board.SetPieceAt(e4, Piece{Color: White, Type: Queen})
+
+	renderer := Renderer{Theme: DEFAULT, Perspective: White}
+	output := captureStdout(t, func() {
+		renderer.Print(board)
+	})
+
+	for _, want := range []string{"8 ", "1 ", "   a  b  c  d  e  f  g  h ", "♕", ansiReset} {
+		if !strings.Contains(output, want) {
+			t.Errorf("Print() output does not contain %q", want)
+		}
 	}
 }

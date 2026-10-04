@@ -20,3 +20,46 @@ func TestPieceLabel(t *testing.T) {
 		}
 	}
 }
+
+func TestPieceTypeString(t *testing.T) {
+	tests := []struct {
+		pieceType PieceType
+		want      string
+	}{
+		{Pawn, "pawn"},
+		{Knight, "knight"},
+		{Bishop, "bishop"},
+		{Rook, "rook"},
+		{Queen, "queen"},
+		{King, "king"},
+		{PieceNone, "unknown"},
+		{PieceTypeCount, "unknown"},
+	}
+
+	for _, test := range tests {
+		if got := test.pieceType.String(); got != test.want {
+			t.Errorf("PieceType(%d).String() = %q, want %q", test.pieceType, got, test.want)
+		}
+	}
+}
+
+func TestPieceColorMethods(t *testing.T) {
+	if White.Opponent() != Black || Black.Opponent() != White {
+		t.Fatal("Opponent() did not return the opposing color")
+	}
+
+	tests := []struct {
+		color PieceColor
+		want  string
+	}{
+		{White, "White"},
+		{Black, "Black"},
+		{PieceColorCount, "White"},
+	}
+
+	for _, test := range tests {
+		if got := test.color.String(); got != test.want {
+			t.Errorf("PieceColor(%d).String() = %q, want %q", test.color, got, test.want)
+		}
+	}
+}
