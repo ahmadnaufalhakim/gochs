@@ -3,6 +3,7 @@ package chess
 import (
 	"errors"
 	"fmt"
+	"math/bits"
 )
 
 const (
@@ -51,6 +52,48 @@ func (b *Board) validateKingCheck() error {
 			b.ColorToMove.String(),
 			b.ColorToMove.Opponent().String(),
 		)
+	}
+
+	return nil
+}
+
+func (b *Board) validateEnPassantTarget() error {
+	target := b.EnPassantTarget
+	if target == 0 {
+		return nil
+	}
+
+	if !target.IsSingleBit() {
+		return errors.New("en-passant target must contain one square")
+	}
+
+	lastMover := b.ColorToMove.Opponent()
+	if target&pawnEnPassantTargetRank[lastMover] == 0 {
+		return errors.New("en-passant target is on an invalid rank")
+	}
+
+	targetSquare := Square(bits.TrailingZeros64(uint64(target)))
+	if b.IsSquareOccupied(targetSquare) {
+		return errors.New("en-passant target must be empty")
+	}
+
+	pawnFile := int8(targetSquare.File())
+	pawnRank := int8(targetSquare.Rank()) + pawnMoveDelta[lastMover].Rank
+	pawnSquare := Square(pawnFile + pawnRank*8)
+
+	expectedPawn := Piece{
+		Color: lastMover,
+		Type:  Pawn,
+	}
+
+	if !b.IsSquareOccupiedByPiece(pawnSquare, expectedPawn) {
+		return errors.New("en-passant target has no (possibly) double-pushed pawn")
+	}
+
+	pawnSourceRank := int8(targetSquare.Rank()) - pawnMoveDelta[lastMover].Rank
+	pawnSourceSquare := Square(pawnFile + pawnSourceRank*8)
+	if b.IsSquareOccupied(pawnSourceSquare) {
+		return errors.New("en-passant target's pawn source square must be empty")
 	}
 
 	return nil

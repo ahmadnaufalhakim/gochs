@@ -36,6 +36,10 @@ var (
 	}
 	queenMoveDeltas = append(bishopMoveDeltas, rookMoveDeltas...)
 
+	pawnEnPassantTargetRank = [PieceColorCount]Bitboard{
+		White: rank3,
+		Black: rank6,
+	}
 	pawnDoublePushSourceRank = [PieceColorCount]Bitboard{
 		White: rank2,
 		Black: rank7,
@@ -258,6 +262,20 @@ func GeneratePawnPseudoLegalMoves(b Board, color PieceColor) []Move {
 					moves = append(moves, NewMove(from, attackTo, PromoteCaptureQueen))
 				} else {
 					moves = append(moves, NewMove(from, attackTo, Capture))
+				}
+			} else if b.EnPassantTarget&attackTo.Mask() != 0 {
+				capturedFile := int8(attackTo.File())
+				capturedRank := int8(attackTo.Rank()) - delta.Rank
+				capturedPawnSquare := Square(capturedFile + capturedRank*8)
+
+				capturedPawn := Piece{
+					Color: color.Opponent(),
+					Type:  Pawn,
+				}
+
+				if occupied&attackTo.Mask() == 0 &&
+					b.IsSquareOccupiedByPiece(capturedPawnSquare, capturedPawn) {
+					moves = append(moves, NewMove(from, attackTo, EnPassant))
 				}
 			}
 		}

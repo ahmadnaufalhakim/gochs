@@ -117,8 +117,9 @@ func ParseCoordinate(coordinate string) (Square, error) {
 }
 
 type Board struct {
-	Pieces      [PieceColorCount][PieceTypeCount]Bitboard
-	ColorToMove PieceColor
+	Pieces          [PieceColorCount][PieceTypeCount]Bitboard
+	EnPassantTarget Bitboard
+	ColorToMove     PieceColor
 }
 
 func (b *Board) Clear() {
@@ -127,6 +128,7 @@ func (b *Board) Clear() {
 			b.Pieces[color][pieceType] &= Bitboard(0)
 		}
 	}
+	b.EnPassantTarget = Bitboard(0)
 }
 
 func (b *Board) ClearSquare(s Square) {
@@ -159,6 +161,7 @@ var startingPositions = [PieceColorCount][PieceTypeCount]Bitboard{
 
 func (b *Board) Reset() {
 	b.Pieces = startingPositions
+	b.EnPassantTarget = Bitboard(0)
 	b.ColorToMove = White
 }
 
@@ -193,6 +196,9 @@ func (b *Board) Validate() error {
 		return err
 	}
 	if err := b.validatePawnPositions(); err != nil {
+		return err
+	}
+	if err := b.validateEnPassantTarget(); err != nil {
 		return err
 	}
 
@@ -290,7 +296,18 @@ func (b *Board) IsSquareAttackedBy(s Square, by PieceColor) bool {
 
 func (b *Board) applyMove(m Move) {
 	movingPiece := b.PieceAt(m.From())
+	delta := pawnMoveDelta[movingPiece.Color]
+
+	if m.Flag() == EnPassant {
+		capturedFile := int8(m.To().File())
+		capturedRank := int8(m.To().Rank()) - delta.Rank
+		capturedSquare := Square(capturedFile + capturedRank*8)
+
+		b.Pieces[movingPiece.Color.Opponent()][Pawn] &^= capturedSquare.Mask()
+	}
+
 	b.ClearSquare(m.From())
+
 	if movingPiece.Type == Pawn &&
 		pawnPromotionRank[movingPiece.Color]&m.To().Mask() != 0 {
 		switch m.Flag() {
@@ -304,7 +321,18 @@ func (b *Board) applyMove(m Move) {
 			movingPiece.Type = Queen
 		}
 	}
+
 	b.SetPieceAt(m.To(), movingPiece)
+
+	b.EnPassantTarget = Bitboard(0)
+	if m.Flag() == DoublePawnPush {
+		enPassantTargetFile := int8(m.From().File())
+		enPassantTargetRank := int8(m.From().Rank()) + delta.Rank
+		enPassantTargetSquare := Square(enPassantTargetFile + enPassantTargetRank*8)
+
+		b.EnPassantTarget = enPassantTargetSquare.Mask()
+	}
+
 	b.ColorToMove = b.ColorToMove.Opponent()
 }
 
