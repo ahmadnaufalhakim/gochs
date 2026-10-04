@@ -13,6 +13,25 @@ const (
 	PieceTypeCount
 )
 
+func (t PieceType) String() string {
+	switch t {
+	case Pawn:
+		return "pawn"
+	case Knight:
+		return "knight"
+	case Bishop:
+		return "bishop"
+	case Rook:
+		return "rook"
+	case Queen:
+		return "queen"
+	case King:
+		return "king"
+	default:
+		return "unknown"
+	}
+}
+
 type PieceColor uint8
 
 const (
