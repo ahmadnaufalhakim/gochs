@@ -396,3 +396,81 @@ func GenerateKingAttacks(b Board, c PieceColor) Bitboard {
 
 	return moves
 }
+
+func GenerateJumpPseudoLegalMoves(
+	b Board,
+	color PieceColor,
+	pieceType PieceType,
+	deltas []MoveDelta,
+) []Move {
+	var moves []Move
+	pieces := b.Pieces[color][pieceType]
+
+	for from := a1; from <= h8; from++ {
+		if pieces&from.Mask() == 0 {
+			continue
+		}
+
+		for _, delta := range deltas {
+			source := from.Mask() & allowedSources(delta)
+			if source == 0 {
+				continue
+			}
+
+			file := int8(from.File()) + delta.File
+			rank := int8(from.Rank()) + delta.Rank
+			to := Square(file + rank*8)
+			toPiece := b.PieceAt(to)
+			if toPiece.Type != PieceNone {
+				if toPiece.Color != color && toPiece.Type != King {
+					moves = append(moves, NewMove(from, to, Capture))
+				}
+				break
+			}
+			moves = append(moves, NewMove(from, to, QuietMove))
+		}
+	}
+
+	return moves
+}
+
+func GenerateSlidePseudoLegalMoves(
+	b Board,
+	color PieceColor,
+	pieceType PieceType,
+	deltas []MoveDelta,
+) []Move {
+	var moves []Move
+	pieces := b.Pieces[color][pieceType]
+
+	for from := a1; from <= h8; from++ {
+		if pieces&from.Mask() == 0 {
+			continue
+		}
+
+		for _, delta := range deltas {
+			file := int8(from.File())
+			rank := int8(from.Rank())
+
+			for {
+				file += delta.File
+				rank += delta.Rank
+				if file < 0 || file > 7 || rank < 0 || rank > 7 {
+					break
+				}
+
+				to := Square(file + rank*8)
+				toPiece := b.PieceAt(to)
+				if toPiece.Type != PieceNone {
+					if toPiece.Color != color && toPiece.Type != King {
+						moves = append(moves, NewMove(from, to, Capture))
+					}
+					break
+				}
+				moves = append(moves, NewMove(from, to, QuietMove))
+			}
+		}
+	}
+
+	return moves
+}
