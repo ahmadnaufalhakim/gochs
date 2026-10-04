@@ -281,6 +281,10 @@ func GenerateKnightAttacks(b Board, c PieceColor) Bitboard {
 	return attacks
 }
 
+func GenerateKnightPseudoLegalMoves(b Board, color PieceColor) []Move {
+	return GenerateJumpPseudoLegalMoves(b, color, Knight, knightMoveDeltas)
+}
+
 func GenerateBishopMoveDestinations(b Board) Bitboard {
 	var moves Bitboard
 	bishops := b.Pieces[b.ColorToMove][Bishop]
@@ -305,6 +309,10 @@ func GenerateBishopAttacks(b Board, c PieceColor) Bitboard {
 	}
 
 	return attacks
+}
+
+func GenerateBishopPseudoLegalMoves(b Board, color PieceColor) []Move {
+	return GenerateSlidePseudoLegalMoves(b, color, Bishop, bishopMoveDeltas)
 }
 
 func GenerateRookMoveDestinations(b Board) Bitboard {
@@ -333,6 +341,10 @@ func GenerateRookAttacks(b Board, c PieceColor) Bitboard {
 	return attacks
 }
 
+func GenerateRookPseudoLegalMoves(b Board, color PieceColor) []Move {
+	return GenerateSlidePseudoLegalMoves(b, color, Rook, rookMoveDeltas)
+}
+
 func GenerateQueenMoveDestinations(b Board) Bitboard {
 	var moves Bitboard
 	queens := b.Pieces[b.ColorToMove][Queen]
@@ -357,6 +369,10 @@ func GenerateQueenAttacks(b Board, c PieceColor) Bitboard {
 	}
 
 	return attacks
+}
+
+func GenerateQueenPseudoLegalMoves(b Board, color PieceColor) []Move {
+	return GenerateSlidePseudoLegalMoves(b, color, Queen, queenMoveDeltas)
 }
 
 func GenerateKingMoveDestinations(b Board) Bitboard {
@@ -395,6 +411,10 @@ func GenerateKingAttacks(b Board, c PieceColor) Bitboard {
 	}
 
 	return moves
+}
+
+func GenerateKingPseudoLegalMoves(b Board, color PieceColor) []Move {
+	return GenerateJumpPseudoLegalMoves(b, color, King, queenMoveDeltas)
 }
 
 func GenerateJumpPseudoLegalMoves(
