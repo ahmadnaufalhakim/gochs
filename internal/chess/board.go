@@ -3,6 +3,7 @@ package chess
 import (
 	"errors"
 	"fmt"
+	"math/bits"
 	"slices"
 )
 
@@ -119,8 +120,8 @@ func ParseCoordinate(coordinate string) (Square, error) {
 type CastlingSide uint8
 
 const (
-	QueenSide CastlingSide = iota
-	KingSide
+	KingSide CastlingSide = iota
+	QueenSide
 	CastlingSideCount
 )
 
@@ -128,6 +129,23 @@ type CastlingRight struct {
 	KingFrom  Square
 	RookFrom  Square
 	Available bool
+}
+
+func castlingDestinations(color PieceColor, side CastlingSide) (Square, Square) {
+	switch color {
+	case White:
+		if side == KingSide {
+			return g1, f1
+		}
+		return c1, d1
+	case Black:
+		if side == KingSide {
+			return g8, f8
+		}
+		return c8, d8
+	}
+
+	return Square(0), Square(0)
 }
 
 type Board struct {
@@ -143,6 +161,7 @@ func (b *Board) Clear() {
 			b.Pieces[color][pieceType] &= Bitboard(0)
 		}
 	}
+	b.CastlingRights = [PieceColorCount][CastlingSideCount]CastlingRight{}
 	b.EnPassantTarget = Bitboard(0)
 }
 
@@ -173,9 +192,46 @@ var defaultStartingPieces = [PieceColorCount][PieceTypeCount]Bitboard{
 		King:   e8.Mask(),
 	},
 }
+var defaultStartingCastlingRights = [PieceColorCount][CastlingSideCount]CastlingRight{
+	White: {
+		QueenSide: {
+			KingFrom:  e1,
+			RookFrom:  a1,
+			Available: true,
+		},
+		KingSide: {
+			KingFrom:  e1,
+			RookFrom:  h1,
+			Available: true,
+		},
+	},
+	Black: {
+		QueenSide: {
+			KingFrom:  e8,
+			RookFrom:  a8,
+			Available: true,
+		},
+		KingSide: {
+			KingFrom:  e8,
+			RookFrom:  h8,
+			Available: true,
+		},
+	},
+}
+
+func (b *Board) disableRookCastlingRight(color PieceColor, rookSquare Square) {
+	for side := range CastlingSideCount {
+		right := &b.CastlingRights[color][side]
+
+		if right.RookFrom == rookSquare {
+			right.Available = false
+		}
+	}
+}
 
 func (b *Board) Reset() {
 	b.Pieces = defaultStartingPieces
+	b.CastlingRights = defaultStartingCastlingRights
 	b.EnPassantTarget = Bitboard(0)
 	b.ColorToMove = White
 }
@@ -309,13 +365,73 @@ func (b *Board) IsSquareAttackedBy(s Square, by PieceColor) bool {
 	return false
 }
 
+func (b *Board) isKingCastlingPathSafe(from, to Square, color PieceColor) bool {
+	step := int8(1)
+	if to.File() < from.File() {
+		step = -1
+	} else if to.File() == from.File() {
+		step = 0
+	}
+
+	for file := int8(from.File()); ; file += step {
+		square := Square(file + int8(from.Rank())*8)
+
+		if b.IsSquareAttackedBy(square, color.Opponent()) {
+			return false
+		}
+		if square == to {
+			return true
+		}
+	}
+}
+
+func (b *Board) isRookCastlingPathUnoccupied(from, to Square, color PieceColor) bool {
+	step := int8(1)
+	if to.File() < from.File() {
+		step = -1
+	} else if to.File() == from.File() {
+		step = 0
+	}
+
+	king := b.Pieces[color][King]
+	kingSquare := Square(bits.TrailingZeros64(uint64(king)))
+
+	for file := int8(from.File()) + step; ; file += step {
+		square := Square(file + int8(from.Rank())*8)
+
+		if b.IsSquareOccupied(square) && square != kingSquare {
+			return false
+		}
+		if square == to {
+			return true
+		}
+	}
+}
+
 func (b *Board) applyMove(m Move) {
 	movingPiece := b.PieceAt(m.From())
-	delta := pawnMoveDelta[movingPiece.Color]
+	capturedPiece := b.PieceAt(m.To())
+	pawnDelta := pawnMoveDelta[movingPiece.Color]
+
+	if slices.Contains([]MoveFlag{KingSideCastle, QueenSideCastle}, m.Flag()) {
+		castlingSide := CastlingSide(m.Flag())
+		castlingRight := b.CastlingRights[movingPiece.Color][castlingSide]
+
+		castlingRookSquare := castlingRight.RookFrom
+		castlingRook := b.PieceAt(castlingRookSquare)
+		b.ClearSquare(castlingRookSquare)
+
+		_, castlingRookDestination := castlingDestinations(movingPiece.Color, CastlingSide(m.Flag()))
+		b.SetPieceAt(castlingRookDestination, castlingRook)
+
+		for side := range CastlingSideCount {
+			b.CastlingRights[movingPiece.Color][side].Available = false
+		}
+	}
 
 	if m.Flag() == EnPassant {
 		capturedFile := int8(m.To().File())
-		capturedRank := int8(m.To().Rank()) - delta.Rank
+		capturedRank := int8(m.To().Rank()) - pawnDelta.Rank
 		capturedSquare := Square(capturedFile + capturedRank*8)
 
 		b.Pieces[movingPiece.Color.Opponent()][Pawn] &^= capturedSquare.Mask()
@@ -337,12 +453,24 @@ func (b *Board) applyMove(m Move) {
 		}
 	}
 
+	if movingPiece.Type == King {
+		for side := range CastlingSideCount {
+			b.CastlingRights[movingPiece.Color][side].Available = false
+		}
+	}
+	if movingPiece.Type == Rook {
+		b.disableRookCastlingRight(movingPiece.Color, m.From())
+	}
+	if capturedPiece.Type == Rook {
+		b.disableRookCastlingRight(capturedPiece.Color, m.To())
+	}
+
 	b.SetPieceAt(m.To(), movingPiece)
 
 	b.EnPassantTarget = Bitboard(0)
 	if m.Flag() == DoublePawnPush {
 		enPassantTargetFile := int8(m.From().File())
-		enPassantTargetRank := int8(m.From().Rank()) + delta.Rank
+		enPassantTargetRank := int8(m.From().Rank()) + pawnDelta.Rank
 		enPassantTargetSquare := Square(enPassantTargetFile + enPassantTargetRank*8)
 
 		b.EnPassantTarget = enPassantTargetSquare.Mask()
