@@ -457,6 +457,32 @@ func GenerateSlidePseudoLegalMoves(
 	return moves
 }
 
+func GenerateCastlingPseudoLegalMoves(b Board, color PieceColor) []Move {
+	var moves []Move
+
+	for side := range CastlingSideCount {
+		castlingRight := b.CastlingRights[color][side]
+		if !castlingRight.Available {
+			continue
+		}
+
+		king := b.PieceAt(castlingRight.KingFrom)
+		rook := b.PieceAt(castlingRight.RookFrom)
+		if king != (Piece{Color: color, Type: King}) ||
+			rook != (Piece{Color: color, Type: Rook}) {
+			continue
+		}
+
+		kingTo, rookTo := castlingDestinations(color, side)
+		if b.isKingCastlingPathSafe(castlingRight.KingFrom, kingTo, color) &&
+			b.isRookCastlingPathUnoccupied(castlingRight.RookFrom, rookTo, color) {
+			moves = append(moves, NewMove(castlingRight.KingFrom, kingTo, MoveFlag(side)))
+		}
+	}
+
+	return moves
+}
+
 func GeneratePseudoLegalMoves(b Board, color PieceColor) []Move {
 	var moves []Move
 
@@ -466,6 +492,7 @@ func GeneratePseudoLegalMoves(b Board, color PieceColor) []Move {
 	moves = append(moves, GenerateRookPseudoLegalMoves(b, color)...)
 	moves = append(moves, GenerateQueenPseudoLegalMoves(b, color)...)
 	moves = append(moves, GenerateKingPseudoLegalMoves(b, color)...)
+	moves = append(moves, GenerateCastlingPseudoLegalMoves(b, color)...)
 
 	return moves
 }
