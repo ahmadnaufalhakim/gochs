@@ -91,7 +91,8 @@ func TestBoardReset(t *testing.T) {
 				King:   0x1000000000000000,
 			},
 		},
-		ColorToMove: White,
+		CastlingRights: defaultStartingCastlingRights,
+		ColorToMove:    White,
 	}
 
 	if board != want {

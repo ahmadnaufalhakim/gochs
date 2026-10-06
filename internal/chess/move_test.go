@@ -1,6 +1,9 @@
 package chess
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func square(t *testing.T, coordinate string) Square {
 	t.Helper()
@@ -22,13 +25,7 @@ func boardWithKings() Board {
 }
 
 func movesContain(moves []Move, want Move) bool {
-	for _, move := range moves {
-		if move == want {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(moves, want)
 }
 
 func requireMove(t *testing.T, moves []Move, want Move) {
@@ -346,6 +343,172 @@ func TestEnPassantThatExposesKingIsNotLegal(t *testing.T) {
 	enPassant := NewMove(g5, f6, EnPassant)
 	requireMove(t, GeneratePawnPseudoLegalMoves(board, White), enPassant)
 	requireNoMove(t, GenerateLegalMoves(board), enPassant)
+}
+
+func standardCastlingBoard(color PieceColor, side CastlingSide) Board {
+	var board Board
+	board.SetPieceAt(e1, Piece{Color: White, Type: King})
+	board.SetPieceAt(e8, Piece{Color: Black, Type: King})
+
+	right := defaultStartingCastlingRights[color][side]
+	board.SetPieceAt(right.RookFrom, Piece{Color: color, Type: Rook})
+	board.CastlingRights[color][side] = right
+	board.ColorToMove = color
+
+	return board
+}
+
+func TestGenerateLegalMovesIncludesStandardCastles(t *testing.T) {
+	for _, color := range []PieceColor{White, Black} {
+		for _, side := range []CastlingSide{KingSide, QueenSide} {
+			board := standardCastlingBoard(color, side)
+			kingTo, _ := castlingDestinations(color, side)
+			want := NewMove(defaultStartingCastlingRights[color][side].KingFrom, kingTo, MoveFlag(side))
+
+			requireMove(t, GenerateLegalMoves(board), want)
+		}
+	}
+}
+
+func TestCastlingRejectsBlockedAndAttackedKingPaths(t *testing.T) {
+	tests := []struct {
+		name  string
+		board Board
+		move  Move
+	}{
+		{
+			name: "king-side blocker",
+			board: func() Board {
+				board := standardCastlingBoard(White, KingSide)
+				board.SetPieceAt(f1, Piece{Color: White, Type: Bishop})
+				return board
+			}(),
+			move: NewMove(e1, g1, KingSideCastle),
+		},
+		{
+			name: "queen-side blocker",
+			board: func() Board {
+				board := standardCastlingBoard(White, QueenSide)
+				board.SetPieceAt(b1, Piece{Color: White, Type: Knight})
+				return board
+			}(),
+			move: NewMove(e1, c1, QueenSideCastle),
+		},
+		{
+			name: "king currently in check",
+			board: func() Board {
+				board := standardCastlingBoard(White, KingSide)
+				board.ClearSquare(e8)
+				board.SetPieceAt(a8, Piece{Color: Black, Type: King})
+				board.SetPieceAt(e8, Piece{Color: Black, Type: Rook})
+				return board
+			}(),
+			move: NewMove(e1, g1, KingSideCastle),
+		},
+		{
+			name: "attacked transit square",
+			board: func() Board {
+				board := standardCastlingBoard(White, KingSide)
+				board.ClearSquare(e8)
+				board.SetPieceAt(a8, Piece{Color: Black, Type: King})
+				board.SetPieceAt(f8, Piece{Color: Black, Type: Rook})
+				return board
+			}(),
+			move: NewMove(e1, g1, KingSideCastle),
+		},
+		{
+			name: "attacked destination square",
+			board: func() Board {
+				board := standardCastlingBoard(White, KingSide)
+				board.ClearSquare(e8)
+				board.SetPieceAt(a8, Piece{Color: Black, Type: King})
+				board.SetPieceAt(g8, Piece{Color: Black, Type: Rook})
+				return board
+			}(),
+			move: NewMove(e1, g1, KingSideCastle),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			requireNoMove(t, GenerateLegalMoves(test.board), test.move)
+		})
+	}
+}
+
+func TestMakeMoveAppliesCastling(t *testing.T) {
+	for _, color := range []PieceColor{White, Black} {
+		for _, side := range []CastlingSide{KingSide, QueenSide} {
+			board := standardCastlingBoard(color, side)
+			right := defaultStartingCastlingRights[color][side]
+			kingTo, rookTo := castlingDestinations(color, side)
+			castle := NewMove(right.KingFrom, kingTo, MoveFlag(side))
+
+			requireMakeMove(t, &board, castle)
+			if got := board.PieceAt(kingTo); got != (Piece{Color: color, Type: King}) {
+				t.Errorf("king at %s = %#v, want %s king", kingTo, got, color)
+			}
+			if got := board.PieceAt(rookTo); got != (Piece{Color: color, Type: Rook}) {
+				t.Errorf("rook at %s = %#v, want %s rook", rookTo, got, color)
+			}
+			if board.PieceAt(right.KingFrom).Type != PieceNone || board.PieceAt(right.RookFrom).Type != PieceNone {
+				t.Error("castling left a piece on an origin square")
+			}
+			if board.ColorToMove != color.Opponent() {
+				t.Errorf("ColorToMove = %s, want %s", board.ColorToMove, color.Opponent())
+			}
+			for castlingSide := range CastlingSideCount {
+				if board.CastlingRights[color][castlingSide].Available {
+					t.Errorf("%s castling right %d remains available", color, castlingSide)
+				}
+			}
+		}
+	}
+}
+
+func TestCastlingRightsAreRevokedByKingRookMovesAndRookCapture(t *testing.T) {
+	t.Run("king move", func(t *testing.T) {
+		var board Board
+		board.Reset()
+		requireMakeMove(t, &board, NewMove(e2, e4, DoublePawnPush))
+		requireMakeMove(t, &board, NewMove(a7, a6, QuietMove))
+		requireMakeMove(t, &board, NewMove(e1, e2, QuietMove))
+
+		for side := range CastlingSideCount {
+			if board.CastlingRights[White][side].Available {
+				t.Errorf("white castling right %d remains available after king move", side)
+			}
+		}
+	})
+
+	t.Run("rook move", func(t *testing.T) {
+		board := standardCastlingBoard(White, KingSide)
+		board.CastlingRights[White][QueenSide] = defaultStartingCastlingRights[White][QueenSide]
+		board.SetPieceAt(a1, Piece{Color: White, Type: Rook})
+		requireMakeMove(t, &board, NewMove(h1, h2, QuietMove))
+
+		if board.CastlingRights[White][KingSide].Available {
+			t.Error("white king-side castling remains available after h1 rook moves")
+		}
+		if !board.CastlingRights[White][QueenSide].Available {
+			t.Error("white queen-side castling was revoked by the h1 rook move")
+		}
+	})
+
+	t.Run("rook capture", func(t *testing.T) {
+		var board Board
+		board.SetPieceAt(e1, Piece{Color: White, Type: King})
+		board.SetPieceAt(a8, Piece{Color: Black, Type: King})
+		board.SetPieceAt(h1, Piece{Color: White, Type: Rook})
+		board.SetPieceAt(h8, Piece{Color: Black, Type: Rook})
+		board.CastlingRights[White][KingSide] = defaultStartingCastlingRights[White][KingSide]
+		board.ColorToMove = Black
+
+		requireMakeMove(t, &board, NewMove(h8, h1, Capture))
+		if board.CastlingRights[White][KingSide].Available {
+			t.Error("white king-side castling remains available after the h1 rook is captured")
+		}
+	})
 }
 
 func perft(board Board, depth int) int {
