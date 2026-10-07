@@ -218,4 +218,40 @@ func TestBoardValidate(t *testing.T) {
 			t.Fatal("Validate() returned no error for an occupied double-push source")
 		}
 	})
+
+	t.Run("valid Chess960 castling right", func(t *testing.T) {
+		var board Board
+		board.SetPieceAt(f1, Piece{Color: White, Type: King})
+		board.SetPieceAt(h1, Piece{Color: White, Type: Rook})
+		board.SetPieceAt(e8, Piece{Color: Black, Type: King})
+		board.CastlingRights[White][KingSide] = CastlingRight{
+			KingFrom:  f1,
+			RookFrom:  h1,
+			Available: true,
+		}
+		if err := board.Validate(); err != nil {
+			t.Errorf("Validate() returned an error: %v", err)
+		}
+	})
+
+	t.Run("castling right without rook", func(t *testing.T) {
+		board := boardWithKings()
+		board.CastlingRights[White][KingSide] = defaultStartingCastlingRights[White][KingSide]
+		if err := board.Validate(); err == nil {
+			t.Fatal("Validate() returned no error for a castling right without its rook")
+		}
+	})
+
+	t.Run("castling right with rook on wrong side", func(t *testing.T) {
+		board := boardWithKings()
+		board.SetPieceAt(d1, Piece{Color: White, Type: Rook})
+		board.CastlingRights[White][KingSide] = CastlingRight{
+			KingFrom:  e1,
+			RookFrom:  d1,
+			Available: true,
+		}
+		if err := board.Validate(); err == nil {
+			t.Fatal("Validate() returned no error for a king-side rook left of its king")
+		}
+	})
 }

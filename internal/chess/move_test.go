@@ -358,6 +358,25 @@ func standardCastlingBoard(color PieceColor, side CastlingSide) Board {
 	return board
 }
 
+func castlingBoard(color PieceColor, side CastlingSide, kingFrom, rookFrom Square) Board {
+	var board Board
+	if color == White {
+		board.SetPieceAt(e8, Piece{Color: Black, Type: King})
+	} else {
+		board.SetPieceAt(e1, Piece{Color: White, Type: King})
+	}
+	board.SetPieceAt(kingFrom, Piece{Color: color, Type: King})
+	board.SetPieceAt(rookFrom, Piece{Color: color, Type: Rook})
+	board.CastlingRights[color][side] = CastlingRight{
+		KingFrom:  kingFrom,
+		RookFrom:  rookFrom,
+		Available: true,
+	}
+	board.ColorToMove = color
+
+	return board
+}
+
 func TestGenerateLegalMovesIncludesStandardCastles(t *testing.T) {
 	for _, color := range []PieceColor{White, Black} {
 		for _, side := range []CastlingSide{KingSide, QueenSide} {
@@ -381,6 +400,15 @@ func TestCastlingRejectsBlockedAndAttackedKingPaths(t *testing.T) {
 			board: func() Board {
 				board := standardCastlingBoard(White, KingSide)
 				board.SetPieceAt(f1, Piece{Color: White, Type: Bishop})
+				return board
+			}(),
+			move: NewMove(e1, g1, KingSideCastle),
+		},
+		{
+			name: "king-side destination occupied",
+			board: func() Board {
+				board := standardCastlingBoard(White, KingSide)
+				board.SetPieceAt(g1, Piece{Color: White, Type: Knight})
 				return board
 			}(),
 			move: NewMove(e1, g1, KingSideCastle),
@@ -434,6 +462,104 @@ func TestCastlingRejectsBlockedAndAttackedKingPaths(t *testing.T) {
 			requireNoMove(t, GenerateLegalMoves(test.board), test.move)
 		})
 	}
+}
+
+func TestChess960Castling(t *testing.T) {
+	tests := []struct {
+		name     string
+		color    PieceColor
+		side     CastlingSide
+		kingFrom Square
+		rookFrom Square
+	}{
+		{
+			name:     "rook finishes on king origin",
+			color:    White,
+			side:     KingSide,
+			kingFrom: f1,
+			rookFrom: h1,
+		},
+		{
+			name:     "king finishes on rook origin",
+			color:    White,
+			side:     KingSide,
+			kingFrom: f1,
+			rookFrom: g1,
+		},
+		{
+			name:     "rook remains on final square",
+			color:    White,
+			side:     KingSide,
+			kingFrom: e1,
+			rookFrom: f1,
+		},
+		{
+			name:     "king remains on final square",
+			color:    White,
+			side:     KingSide,
+			kingFrom: g1,
+			rookFrom: h1,
+		},
+		{
+			name:     "queen-side rook finishes on king origin",
+			color:    White,
+			side:     QueenSide,
+			kingFrom: d1,
+			rookFrom: a1,
+		},
+		{
+			name:     "queen-side king finishes on rook origin",
+			color:    White,
+			side:     QueenSide,
+			kingFrom: d1,
+			rookFrom: c1,
+		},
+		{
+			name:     "queen-side rook remains on final square",
+			color:    White,
+			side:     QueenSide,
+			kingFrom: e1,
+			rookFrom: d1,
+		},
+		{
+			name:     "queen-side king remains on final square",
+			color:    White,
+			side:     QueenSide,
+			kingFrom: c1,
+			rookFrom: a1,
+		},
+		{
+			name:     "black rook finishes on king origin",
+			color:    Black,
+			side:     KingSide,
+			kingFrom: f8,
+			rookFrom: h8,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			board := castlingBoard(test.color, test.side, test.kingFrom, test.rookFrom)
+			kingTo, rookTo := castlingDestinations(test.color, test.side)
+			castle := NewMove(test.kingFrom, kingTo, MoveFlag(test.side))
+
+			requireMove(t, GenerateLegalMoves(board), castle)
+			requireMakeMove(t, &board, castle)
+			if got, want := board.Pieces[test.color][King], kingTo.Mask(); got != want {
+				t.Errorf("%s king = %#x, want %#x", test.color, got, want)
+			}
+			if got, want := board.Pieces[test.color][Rook], rookTo.Mask(); got != want {
+				t.Errorf("%s rook = %#x, want %#x", test.color, got, want)
+			}
+		})
+	}
+}
+
+func TestChess960CastlingRequiresClearKingPath(t *testing.T) {
+	board := castlingBoard(White, KingSide, b1, h1)
+	board.SetPieceAt(d1, Piece{Color: White, Type: Knight})
+
+	requireNoMove(t, GenerateLegalMoves(board), NewMove(b1, g1, KingSideCastle))
 }
 
 func TestMakeMoveAppliesCastling(t *testing.T) {

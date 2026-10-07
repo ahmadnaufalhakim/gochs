@@ -98,3 +98,39 @@ func (b *Board) validateEnPassantTarget() error {
 
 	return nil
 }
+
+func (right CastlingRight) isWellFormed(color PieceColor, side CastlingSide) bool {
+	if right.KingFrom.Mask()&castlingHomeRank[color] == 0 ||
+		right.RookFrom.Mask()&castlingHomeRank[color] == 0 ||
+		right.KingFrom == right.RookFrom {
+		return false
+	}
+
+	if side == KingSide {
+		return right.RookFrom.File() > right.KingFrom.File()
+	}
+
+	return right.RookFrom.File() < right.KingFrom.File()
+}
+
+func (b *Board) validateCastlingRights() error {
+	for color := range PieceColorCount {
+		for side := range CastlingSideCount {
+			right := b.CastlingRights[color][side]
+			if !right.Available {
+				continue
+			}
+			if !right.isWellFormed(color, CastlingSide(side)) {
+				return fmt.Errorf("%s castling right %d has invalid origins", color, side)
+			}
+			if b.PieceAt(right.KingFrom) != (Piece{Color: color, Type: King}) {
+				return fmt.Errorf("%s castling right %d has no king on its origin", color, side)
+			}
+			if b.PieceAt(right.RookFrom) != (Piece{Color: color, Type: Rook}) {
+				return fmt.Errorf("%s castling right %d has no rook on its origin", color, side)
+			}
+		}
+	}
+
+	return nil
+}

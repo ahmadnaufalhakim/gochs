@@ -48,6 +48,10 @@ var (
 		White: rank8,
 		Black: rank1,
 	}
+	castlingHomeRank = [PieceColorCount]Bitboard{
+		White: rank1,
+		Black: rank8,
+	}
 )
 
 func allowedSources(delta MoveDelta) Bitboard {
@@ -462,7 +466,8 @@ func GenerateCastlingPseudoLegalMoves(b Board, color PieceColor) []Move {
 
 	for side := range CastlingSideCount {
 		castlingRight := b.CastlingRights[color][side]
-		if !castlingRight.Available {
+		if !castlingRight.Available ||
+			!castlingRight.isWellFormed(color, CastlingSide(side)) {
 			continue
 		}
 
@@ -475,7 +480,8 @@ func GenerateCastlingPseudoLegalMoves(b Board, color PieceColor) []Move {
 
 		kingTo, rookTo := castlingDestinations(color, side)
 		if b.isKingCastlingPathSafe(castlingRight.KingFrom, kingTo, color) &&
-			b.isRookCastlingPathUnoccupied(castlingRight.RookFrom, rookTo, color) {
+			b.isCastlingPathUnoccupied(castlingRight.KingFrom, kingTo, castlingRight.RookFrom) &&
+			b.isCastlingPathUnoccupied(castlingRight.RookFrom, rookTo, castlingRight.KingFrom) {
 			moves = append(moves, NewMove(castlingRight.KingFrom, kingTo, MoveFlag(side)))
 		}
 	}
