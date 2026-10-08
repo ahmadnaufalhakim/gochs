@@ -134,3 +134,19 @@ func (b *Board) validateCastlingRights() error {
 
 	return nil
 }
+
+func (b *Board) validateHalfmoveClock() error {
+	if b.HalfmoveClock < 0 {
+		return fmt.Errorf("invalid halfmove clock: %v", b.HalfmoveClock)
+	}
+
+	return nil
+}
+
+func (b *Board) validateFullmoveNumber() error {
+	if b.FullmoveNumber < 1 {
+		return fmt.Errorf("invalid fullmove number: %v", b.FullmoveNumber)
+	}
+
+	return nil
+}

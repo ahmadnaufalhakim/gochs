@@ -280,6 +280,12 @@ func (b *Board) Validate() error {
 	if err := b.validateCastlingRights(); err != nil {
 		return err
 	}
+	if err := b.validateHalfmoveClock(); err != nil {
+		return err
+	}
+	if err := b.validateFullmoveNumber(); err != nil {
+		return err
+	}
 
 	return nil
 }
