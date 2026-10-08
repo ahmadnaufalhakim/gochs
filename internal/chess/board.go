@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 )
 
 type Square uint8
@@ -499,4 +501,69 @@ func (b *Board) MakeMove(m Move) error {
 	}
 
 	return fmt.Errorf("%s is an illegal move", m.String())
+}
+
+func (b *Board) FEN() (string, error) {
+	var fen strings.Builder
+
+	var piecePlacements strings.Builder
+	for rank := range 8 {
+		var emptySquare int
+		for file := range 8 {
+			if fenSym, ok := pieceToFENSymbol[b.PieceAt(Square(file+(7-rank)*8))]; ok {
+				if emptySquare > 0 {
+					piecePlacements.WriteString(strconv.Itoa(emptySquare))
+					emptySquare = 0
+				}
+				piecePlacements.WriteString(string(fenSym))
+			} else {
+				emptySquare++
+			}
+		}
+
+		if emptySquare > 0 {
+			piecePlacements.WriteString(strconv.Itoa(emptySquare))
+		}
+
+		if rank < 7 {
+			piecePlacements.WriteString("/")
+		}
+	}
+	fen.WriteString(piecePlacements.String() + " ")
+
+	var activeColor string
+	if b.ColorToMove == White {
+		activeColor = "w"
+	} else {
+		activeColor = "b"
+	}
+	fen.WriteString(activeColor + " ")
+
+	noCastlingRightsAvailable := true
+	var castlingRights strings.Builder
+	for color := range PieceColorCount {
+		for side := range CastlingSideCount {
+			if b.CastlingRights[color][side].Available {
+				castlingRights.WriteString(castlingRightFENSymbol[int(side)+int(color*PieceColorCount)])
+				noCastlingRightsAvailable = false
+			}
+		}
+	}
+	if noCastlingRightsAvailable {
+		castlingRights.WriteString("-")
+	}
+	fen.WriteString(castlingRights.String() + " ")
+
+	enPassantField := "-"
+	if b.EnPassantTarget != 0 {
+		square, ok := b.EnPassantTarget.SingleSquare()
+		if !ok {
+			return "", errors.New("en-passant target must contain one square")
+		}
+
+		enPassantField = square.String()
+	}
+	fen.WriteString(enPassantField + " ")
+
+	return fen.String(), nil
 }
