@@ -1,12 +1,25 @@
 package chess
 
-import "fmt"
+import (
+	"fmt"
+	"math/bits"
+)
 
 type Bitboard uint64
 
 // Checks if bitboard only has one 1-valued bit.
 func (b Bitboard) IsSingleBit() bool {
 	return b != 0 && b&(b-1) == 0
+}
+
+// Checks if a single square can be extracted
+// from a bitboard.
+func (b Bitboard) SingleSquare() (Square, bool) {
+	if !b.IsSingleBit() {
+		return Square(0), false
+	}
+
+	return Square(bits.TrailingZeros64(uint64(b))), true
 }
 
 // Canonical bitboard printing function. Canonical meaning
