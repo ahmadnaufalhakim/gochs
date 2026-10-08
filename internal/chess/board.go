@@ -154,6 +154,8 @@ type Board struct {
 	CastlingRights  [PieceColorCount][CastlingSideCount]CastlingRight
 	EnPassantTarget Bitboard
 	ColorToMove     PieceColor
+	HalfmoveClock   uint8
+	FullmoveNumber  uint16
 }
 
 func (b *Board) Clear() {
@@ -235,6 +237,8 @@ func (b *Board) Reset() {
 	b.CastlingRights = defaultStartingCastlingRights
 	b.EnPassantTarget = Bitboard(0)
 	b.ColorToMove = White
+	b.HalfmoveClock = 0
+	b.FullmoveNumber = 1
 }
 
 func (b *Board) PieceAt(s Square) Piece {
@@ -420,7 +424,10 @@ func (b *Board) isCastlingPathUnoccupied(from, to, allowedOccupiedSquare Square)
 func (b *Board) applyMove(m Move) {
 	movingPiece := b.PieceAt(m.From())
 	capturedPiece := b.PieceAt(m.To())
+	isPawnMove := movingPiece.Type == Pawn
+	isCaptureMove := capturedPiece.Type != PieceNone || m.Flag() == EnPassant
 	pawnDelta := pawnMoveDelta[movingPiece.Color]
+
 	isCastling := slices.Contains([]MoveFlag{KingSideCastle, QueenSideCastle}, m.Flag())
 	var castlingRook Piece
 	var castlingRookDestination Square
@@ -491,6 +498,16 @@ func (b *Board) applyMove(m Move) {
 	}
 
 	b.ColorToMove = b.ColorToMove.Opponent()
+
+	if isPawnMove || isCaptureMove {
+		b.HalfmoveClock = 0
+	} else {
+		b.HalfmoveClock++
+	}
+
+	if movingPiece.Color == Black {
+		b.FullmoveNumber++
+	}
 }
 
 func (b *Board) MakeMove(m Move) error {
@@ -504,8 +521,6 @@ func (b *Board) MakeMove(m Move) error {
 }
 
 func (b *Board) FEN() (string, error) {
-	var fen strings.Builder
-
 	var piecePlacements strings.Builder
 	for rank := range 8 {
 		var emptySquare int
@@ -529,7 +544,6 @@ func (b *Board) FEN() (string, error) {
 			piecePlacements.WriteString("/")
 		}
 	}
-	fen.WriteString(piecePlacements.String() + " ")
 
 	var activeColor string
 	if b.ColorToMove == White {
@@ -537,7 +551,6 @@ func (b *Board) FEN() (string, error) {
 	} else {
 		activeColor = "b"
 	}
-	fen.WriteString(activeColor + " ")
 
 	noCastlingRightsAvailable := true
 	var castlingRights strings.Builder
@@ -552,7 +565,6 @@ func (b *Board) FEN() (string, error) {
 	if noCastlingRightsAvailable {
 		castlingRights.WriteString("-")
 	}
-	fen.WriteString(castlingRights.String() + " ")
 
 	enPassantField := "-"
 	if b.EnPassantTarget != 0 {
@@ -563,7 +575,13 @@ func (b *Board) FEN() (string, error) {
 
 		enPassantField = square.String()
 	}
-	fen.WriteString(enPassantField + " ")
 
-	return fen.String(), nil
+	return fmt.Sprintf("%s %s %s %s %s %s",
+		piecePlacements.String(),
+		activeColor,
+		castlingRights.String(),
+		enPassantField,
+		strconv.Itoa(int(b.HalfmoveClock)),
+		strconv.Itoa(int(b.FullmoveNumber)),
+	), nil
 }

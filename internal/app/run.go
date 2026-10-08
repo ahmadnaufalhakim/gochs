@@ -27,6 +27,12 @@ func Run() {
 	for {
 		fmt.Println()
 		renderer.Print(board)
+		fen, err := board.FEN()
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println(fen)
+		}
 
 		legalMoves := chess.GenerateLegalMoves(board)
 		if len(legalMoves) == 0 {
