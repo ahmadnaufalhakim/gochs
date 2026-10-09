@@ -93,6 +93,7 @@ func TestBoardReset(t *testing.T) {
 		},
 		CastlingRights: defaultStartingCastlingRights,
 		ColorToMove:    White,
+		FullmoveNumber: 1,
 	}
 
 	if board != want {
@@ -229,6 +230,7 @@ func TestBoardValidate(t *testing.T) {
 			RookFrom:  h1,
 			Available: true,
 		}
+		board.FullmoveNumber = 1
 		if err := board.Validate(); err != nil {
 			t.Errorf("Validate() returned an error: %v", err)
 		}
@@ -254,4 +256,111 @@ func TestBoardValidate(t *testing.T) {
 			t.Fatal("Validate() returned no error for a king-side rook left of its king")
 		}
 	})
+
+	t.Run("overlapping pieces", func(t *testing.T) {
+		board := boardWithKings()
+		board.Pieces[White][Queen] = e1.Mask()
+		if err := board.Validate(); err == nil {
+			t.Fatal("Validate() returned no error for overlapping pieces")
+		}
+	})
+
+	t.Run("invalid color to move", func(t *testing.T) {
+		board := boardWithKings()
+		board.ColorToMove = PieceColorCount
+		if err := board.Validate(); err == nil {
+			t.Fatal("Validate() returned no error for an invalid color to move")
+		}
+	})
+}
+
+func TestBoardFEN(t *testing.T) {
+	tests := []struct {
+		name  string
+		board Board
+		want  string
+	}{
+		{
+			name: "initial position",
+			board: func() Board {
+				var board Board
+				board.Reset()
+				return board
+			}(),
+			want: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+		},
+		{
+			name: "position state",
+			board: func() Board {
+				board := boardWithKings()
+				board.ColorToMove = White
+				board.SetPieceAt(h6, Piece{Color: Black, Type: Knight})
+				board.SetPieceAt(d5, Piece{Color: Black, Type: Pawn})
+				board.SetPieceAt(e5, Piece{Color: White, Type: Pawn})
+				board.EnPassantTarget = d6.Mask()
+				board.HalfmoveClock = 17
+				board.FullmoveNumber = 42
+				return board
+			}(),
+			want: "4k3/8/7n/3pP3/8/8/8/4K3 w - d6 17 42",
+		},
+		{
+			name: "Chess960 castling rights",
+			board: func() Board {
+				board := castlingBoard(White, KingSide, f1, h1)
+				board.FullmoveNumber = 1
+				return board
+			}(),
+			want: "4k3/8/8/8/8/8/8/5K1R w H - 0 1",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := test.board.FEN()
+			if err != nil {
+				t.Fatalf("FEN() returned an error: %v", err)
+			}
+			if got != test.want {
+				t.Errorf("FEN() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestBoardFENRejectsInvalidState(t *testing.T) {
+	tests := []struct {
+		name  string
+		board Board
+	}{
+		{
+			name:  "missing kings",
+			board: Board{FullmoveNumber: 1},
+		},
+		{
+			name: "multiple en-passant targets",
+			board: func() Board {
+				board := boardWithKings()
+				board.EnPassantTarget = e3.Mask() | e6.Mask()
+				return board
+			}(),
+		},
+		{
+			name: "zero fullmove number",
+			board: func() Board {
+				board := boardWithKings()
+				board.FullmoveNumber = 0
+				return board
+			}(),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := test.board.FEN(); err == nil {
+				t.Fatal("FEN() returned no error")
+			}
+		})
+	}
+
 }

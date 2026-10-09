@@ -3,7 +3,6 @@ package chess
 import (
 	"errors"
 	"fmt"
-	"math/bits"
 )
 
 const (
@@ -45,6 +44,29 @@ func (b *Board) validateKingCount() error {
 	return nil
 }
 
+func (b *Board) validateColorToMove() error {
+	if b.ColorToMove >= PieceColorCount {
+		return fmt.Errorf("invalid color to move %d", b.ColorToMove)
+	}
+
+	return nil
+}
+
+func (b *Board) validatePieceOverlaps() error {
+	occupied := Bitboard(0)
+	for color := range PieceColorCount {
+		for pieceType := Pawn; pieceType < PieceTypeCount; pieceType++ {
+			pieces := b.Pieces[color][pieceType]
+			if occupied&pieces != 0 {
+				return errors.New("multiple pieces cannot occupy one square")
+			}
+			occupied |= pieces
+		}
+	}
+
+	return nil
+}
+
 func (b *Board) validateKingCheck() error {
 	if b.IsColorInCheck(b.ColorToMove.Opponent()) {
 		return fmt.Errorf(
@@ -72,7 +94,7 @@ func (b *Board) validateEnPassantTarget() error {
 		return errors.New("en-passant target is on an invalid rank")
 	}
 
-	targetSquare := Square(bits.TrailingZeros64(uint64(target)))
+	targetSquare, _ := target.SingleSquare()
 	if b.IsSquareOccupied(targetSquare) {
 		return errors.New("en-passant target must be empty")
 	}
@@ -130,14 +152,6 @@ func (b *Board) validateCastlingRights() error {
 				return fmt.Errorf("%s castling right %d has no rook on its origin", color, side)
 			}
 		}
-	}
-
-	return nil
-}
-
-func (b *Board) validateHalfmoveClock() error {
-	if b.HalfmoveClock < 0 {
-		return fmt.Errorf("invalid halfmove clock: %v", b.HalfmoveClock)
 	}
 
 	return nil

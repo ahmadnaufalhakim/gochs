@@ -21,6 +21,7 @@ func boardWithKings() Board {
 	board.SetPieceAt(e1, Piece{Color: White, Type: King})
 	board.SetPieceAt(e8, Piece{Color: Black, Type: King})
 	board.ColorToMove = White
+	board.FullmoveNumber = 1
 	return board
 }
 
@@ -237,6 +238,31 @@ func TestGenerateLegalMovesFiltersKingSafety(t *testing.T) {
 }
 
 func TestMakeMoveHandlesDoublePushPromotionAndEnPassant(t *testing.T) {
+	t.Run("updates FEN move counters", func(t *testing.T) {
+		var board Board
+		board.Reset()
+
+		requireMakeMove(t, &board, NewMove(g1, f3, QuietMove))
+		if board.HalfmoveClock != 1 || board.FullmoveNumber != 1 {
+			t.Errorf("after Nf3: halfmove/fullmove = %d/%d, want 1/1", board.HalfmoveClock, board.FullmoveNumber)
+		}
+
+		requireMakeMove(t, &board, NewMove(g8, f6, QuietMove))
+		if board.HalfmoveClock != 2 || board.FullmoveNumber != 2 {
+			t.Errorf("after ...Nf6: halfmove/fullmove = %d/%d, want 2/2", board.HalfmoveClock, board.FullmoveNumber)
+		}
+
+		requireMakeMove(t, &board, NewMove(e2, e4, DoublePawnPush))
+		if board.HalfmoveClock != 0 || board.FullmoveNumber != 2 {
+			t.Errorf("after e4: halfmove/fullmove = %d/%d, want 0/2", board.HalfmoveClock, board.FullmoveNumber)
+		}
+
+		requireMakeMove(t, &board, NewMove(f6, e4, Capture))
+		if board.HalfmoveClock != 0 || board.FullmoveNumber != 3 {
+			t.Errorf("after ...Nxe4: halfmove/fullmove = %d/%d, want 0/3", board.HalfmoveClock, board.FullmoveNumber)
+		}
+	})
+
 	t.Run("double push creates target", func(t *testing.T) {
 		var board Board
 		board.Reset()

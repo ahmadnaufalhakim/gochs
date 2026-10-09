@@ -29,6 +29,26 @@ func TestBitboardIsSingleBit(t *testing.T) {
 	}
 }
 
+func TestBitboardSingleSquare(t *testing.T) {
+	tests := []struct {
+		bitboard Bitboard
+		want     Square
+		ok       bool
+	}{
+		{0, a1, false},
+		{a1.Mask(), a1, true},
+		{e4.Mask(), e4, true},
+		{a1.Mask() | h8.Mask(), a1, false},
+	}
+
+	for _, test := range tests {
+		got, ok := test.bitboard.SingleSquare()
+		if got != test.want || ok != test.ok {
+			t.Errorf("Bitboard(%#x).SingleSquare() = (%s, %t), want (%s, %t)", test.bitboard, got, ok, test.want, test.ok)
+		}
+	}
+}
+
 func TestBitboardPrint(t *testing.T) {
 	got := captureStdout(t, func() {
 		a1.Mask().Print()
