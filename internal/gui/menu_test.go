@@ -19,11 +19,11 @@ func TestDrawMainMenu(t *testing.T) {
 	defer screen.Fini()
 	screen.SetSize(80, 24)
 
-	draw(screen, menuState{selected: puzzle})
+	draw(screen, menuState{selected: puzzle, splashIndex: 1})
 	screen.Show()
 	contents, width, height := screen.GetContents()
 	text := screenText(contents, width, height)
-	for _, want := range []string{"gochs", "Play with Stockfish", "Puzzle", "Options", "Credits", "Exit"} {
+	for _, want := range []string{"___| |__  ___", "<~~~~>", "Play with Stockfish", "Puzzle", "Options", "Credits", "Exit"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("menu rendering does not contain %q", want)
 		}
@@ -116,13 +116,13 @@ func TestMouseActivatesMenuItem(t *testing.T) {
 	layout := mainMenuLayout(width, height)
 	state := menuState{}
 
-	state.handleMouse(tcell.NewEventMouse(layout.x, layout.y+int(credits)*2, tcell.Button1, tcell.ModNone), width, height)
+	state.handleMouse(tcell.NewEventMouse(layout.x, layout.y+int(credits), tcell.Button1, tcell.ModNone), width, height)
 	if state.page != comingSoon || state.unavailableItem != credits {
 		t.Errorf("credits click = %#v, want coming-soon Credits page", state)
 	}
 
 	state = menuState{}
-	state.handleMouse(tcell.NewEventMouse(layout.x, layout.y+int(exit)*2, tcell.Button1, tcell.ModNone), width, height)
+	state.handleMouse(tcell.NewEventMouse(layout.x, layout.y+int(exit), tcell.Button1, tcell.ModNone), width, height)
 	if state.page != exitConfirmation || state.confirmExit {
 		t.Errorf("exit click = %#v, want confirmation with No selected", state)
 	}

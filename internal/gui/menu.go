@@ -1,6 +1,10 @@
 package gui
 
-import "github.com/gdamore/tcell/v2"
+import (
+	"math/rand"
+
+	"github.com/gdamore/tcell/v2"
+)
 
 type page uint8
 
@@ -34,12 +38,110 @@ type menuState struct {
 	selected        menuItem
 	unavailableItem menuItem
 	confirmExit     bool
+	splashIndex     int
 }
 
 type menuLayout struct {
 	x     int
 	y     int
 	width int
+}
+
+var gochsWordmark = []string{
+	"_         ",
+	"  __ _  ___   ___| |__  ___ ",
+	" / _` |/ _ \\ / __| '_ \\/ __|",
+	"| (_| | (_) | (__| | | \\__ \\",
+	" \\__, |\\___/ \\___|_| |_|___/",
+	" |___/ ",
+}
+
+var pieceSplashes = [][]string{
+	{
+		"    .::.    ",
+		"    _::_   ",
+		"  _/____\\_ ",
+		"  \\      / ",
+		"   \\____/  ",
+		"   (____)   ",
+		"    |  |    ",
+		"    |__|    ",
+		"   /    \\   ",
+		"  (______)  ",
+		" (________) ",
+		" /________\\ ",
+	},
+	{
+		"    ()     ",
+		"  <~~~~>   ",
+		"   \\__/    ",
+		"  (____)    ",
+		"   |  |     ",
+		"   |  |     ",
+		"   |__|     ",
+		"  /____\\    ",
+		" (______)   ",
+		"(________)  ",
+		"/________\\  ",
+		"           ",
+	},
+	{
+		"     <>_    ",
+		"   (\\)  )  ",
+		"    \\__/   ",
+		"   (____)   ",
+		"    |  |    ",
+		"    |__|    ",
+		"   /____\\   ",
+		"  (______)  ",
+		" (________) ",
+		"(__________)  ",
+		"           ",
+		"           ",
+	},
+	{
+		"             ",
+		"             ",
+		"   WWWWWW    ",
+		"   WWWWWW    ",
+		"    |  |     ",
+		"    |  |     ",
+		"    |__|     ",
+		"   /____\\    ",
+		"  (______)   ",
+		"           ",
+		"           ",
+		"           ",
+		"           ",
+	},
+	{
+		"      __    ",
+		"     (  )   ",
+		"      ||     ",
+		"     /__\\    ",
+		"    (____)   ",
+		"   (______)  ",
+		"            ",
+		"            ",
+		"            ",
+		"            ",
+		"            ",
+		"            ",
+	},
+	{
+		"    __/\"\"\"\\   ",
+		"   ]___ 0  } ",
+		"       /   }  ",
+		"      /~    } ",
+		"      \\____/  ",
+		"      /____\\  ",
+		"     (______) ",
+		"             ",
+		"             ",
+		"             ",
+		"             ",
+		"             ",
+	},
 }
 
 func (s *menuState) handleKey(event *tcell.EventKey) bool {
@@ -53,7 +155,7 @@ func (s *menuState) handleKey(event *tcell.EventKey) bool {
 		case tcell.KeyEnter:
 			s.activate(s.selected)
 		case tcell.KeyEsc:
-			return true
+			s.activate(exit)
 		case tcell.KeyRune:
 			switch event.Rune() {
 			case 'k':
@@ -61,16 +163,16 @@ func (s *menuState) handleKey(event *tcell.EventKey) bool {
 			case 'j':
 				s.moveSelection(1)
 			case 'q':
-				return true
+				s.activate(exit)
 			}
 		}
 	case comingSoon:
 		switch event.Key() {
 		case tcell.KeyEnter, tcell.KeyEsc:
-			s.page = mainMenu
+			s.showMainMenu()
 		case tcell.KeyRune:
 			if event.Rune() == 'q' {
-				s.page = mainMenu
+				s.showMainMenu()
 			}
 		}
 	case exitConfirmation:
@@ -78,18 +180,18 @@ func (s *menuState) handleKey(event *tcell.EventKey) bool {
 		case tcell.KeyLeft, tcell.KeyRight:
 			s.confirmExit = !s.confirmExit
 		case tcell.KeyEsc:
-			s.page = mainMenu
+			s.showMainMenu()
 		case tcell.KeyEnter:
 			if s.confirmExit {
 				return true
 			}
-			s.page = mainMenu
+			s.showMainMenu()
 		case tcell.KeyRune:
 			switch event.Rune() {
 			case 'y', 'Y':
 				return true
 			case 'n', 'N', 'q':
-				s.page = mainMenu
+				s.showMainMenu()
 			}
 		}
 	}
@@ -111,12 +213,12 @@ func (s *menuState) handleMouse(event *tcell.EventMouse, width, height int) bool
 			s.activate(item)
 		}
 	case comingSoon:
-		s.page = mainMenu
+		s.showMainMenu()
 	case exitConfirmation:
 		if confirmExitAt(x, y, width, height) {
 			return true
 		}
-		s.page = mainMenu
+		s.showMainMenu()
 	}
 
 	return false
@@ -137,9 +239,14 @@ func (s *menuState) activate(item menuItem) {
 	s.unavailableItem = item
 }
 
+func (s *menuState) showMainMenu() {
+	s.page = mainMenu
+	s.splashIndex = rand.Intn(len(pieceSplashes))
+}
+
 func draw(screen tcell.Screen, state menuState) {
 	width, height := screen.Size()
-	if width < 28 || height < 14 {
+	if width < 48 || height < 23 {
 		drawCentered(screen, height/2-1, "Terminal too small", titleStyle)
 		drawCentered(screen, height/2+1, "Resize or Esc to exit", mutedStyle)
 		return
@@ -147,7 +254,7 @@ func draw(screen tcell.Screen, state menuState) {
 
 	switch state.page {
 	case mainMenu:
-		drawMainMenu(screen, state.selected)
+		drawMainMenu(screen, state)
 	case comingSoon:
 		drawComingSoon(screen, state.unavailableItem)
 	case exitConfirmation:
@@ -155,20 +262,32 @@ func draw(screen tcell.Screen, state menuState) {
 	}
 }
 
-func drawMainMenu(screen tcell.Screen, selected menuItem) {
+func drawMainMenu(screen tcell.Screen, state menuState) {
 	width, height := screen.Size()
 	layout := mainMenuLayout(width, height)
 
-	drawCentered(screen, layout.y-5, "gochs", titleStyle)
-	drawCentered(screen, layout.y-3, "terminal chess", mutedStyle)
+	drawSplash(screen, layout.y-tallestSplash()-2, state.splashIndex)
 	for item, label := range menuLabels {
 		style := backgroundStyle
-		if menuItem(item) == selected {
+		if menuItem(item) == state.selected {
 			style = selectedStyle
 		}
-		drawPaddedString(screen, layout.x, layout.y+item*2, layout.width, label, style)
+		drawPaddedString(screen, layout.x, layout.y+item, layout.width, label, style)
 	}
-	drawCentered(screen, layout.y+int(menuItemCount)*2+1, "Up/Down or j/k to select  Enter to choose", mutedStyle)
+	drawCentered(screen, layout.y+int(menuItemCount)+1, "Up/Down or j/k to select  Enter to choose", mutedStyle)
+}
+
+func drawSplash(screen tcell.Screen, y, splashIndex int) {
+	width, _ := screen.Size()
+	splash := pieceSplashes[splashIndex%len(pieceSplashes)]
+	splashWidth := longestLineWidth(gochsWordmark) + 4 + longestLineWidth(splash)
+	x := (width - splashWidth) / 2
+	for row, line := range splash {
+		if row < len(gochsWordmark) {
+			drawString(screen, x, y+row, gochsWordmark[row], titleStyle)
+		}
+		drawString(screen, x+longestLineWidth(gochsWordmark)+4, y+row, line, backgroundStyle)
+	}
 }
 
 func drawComingSoon(screen tcell.Screen, item menuItem) {
@@ -205,7 +324,7 @@ func mainMenuLayout(width, height int) menuLayout {
 
 	return menuLayout{
 		x:     (width - menuWidth - 4) / 2,
-		y:     height/2 - int(menuItemCount),
+		y:     (height-tallestSplash()-int(menuItemCount)-3)/2 + tallestSplash() + 2,
 		width: menuWidth + 4,
 	}
 }
@@ -217,7 +336,7 @@ func menuItemAt(x, y, width, height int) (menuItem, bool) {
 	}
 
 	for item := range menuItemCount {
-		if y == layout.y+int(item)*2 {
+		if y == layout.y+int(item) {
 			return item, true
 		}
 	}
@@ -231,6 +350,28 @@ func confirmExitAt(x, y, width, height int) bool {
 	}
 
 	return y == height/2+1
+}
+
+func longestLineWidth(lines []string) int {
+	width := 0
+	for _, line := range lines {
+		if len(line) > width {
+			width = len(line)
+		}
+	}
+
+	return width
+}
+
+func tallestSplash() int {
+	height := 0
+	for _, splash := range pieceSplashes {
+		if len(splash) > height {
+			height = len(splash)
+		}
+	}
+
+	return height
 }
 
 func drawCentered(screen tcell.Screen, y int, text string, style tcell.Style) {

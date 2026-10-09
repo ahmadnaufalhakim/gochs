@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"math/rand"
 
 	"github.com/gdamore/tcell/v2"
 )
@@ -32,7 +33,7 @@ func Run() error {
 }
 
 func run(screen tcell.Screen) {
-	state := menuState{selected: playWithStockfish}
+	state := newMenuState()
 
 	for {
 		screen.Clear()
@@ -52,5 +53,12 @@ func run(screen tcell.Screen) {
 				return
 			}
 		}
+	}
+}
+
+func newMenuState() menuState {
+	return menuState{
+		selected:    playWithStockfish,
+		splashIndex: rand.Intn(len(pieceSplashes)),
 	}
 }
