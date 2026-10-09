@@ -66,9 +66,9 @@ func TestMenuSelectionWraps(t *testing.T) {
 		t.Errorf("selection after Up = %d, want Exit", state.selected)
 	}
 
-	state.handleKey(keyEvent(tcell.KeyRune, 'j'))
+	state.handleKey(keyEvent(tcell.KeyDown, 0))
 	if state.selected != playWithStockfish {
-		t.Errorf("selection after j = %d, want Play with Stockfish", state.selected)
+		t.Errorf("selection after Down = %d, want Play with Stockfish", state.selected)
 	}
 }
 
@@ -102,9 +102,9 @@ func TestExitConfirmation(t *testing.T) {
 	}
 
 	state = menuState{page: exitConfirmation}
-	state.handleKey(keyEvent(tcell.KeyRight, 0))
+	state.handleKey(keyEvent(tcell.KeyDown, 0))
 	if !state.confirmExit {
-		t.Fatal("Right did not select Yes")
+		t.Fatal("Down did not select Yes")
 	}
 	if !state.handleKey(keyEvent(tcell.KeyEnter, 0)) {
 		t.Fatal("Enter with Yes selected did not exit")
@@ -113,8 +113,8 @@ func TestExitConfirmation(t *testing.T) {
 
 func TestMouseActivatesMenuItem(t *testing.T) {
 	const width, height = 80, 24
-	layout := mainMenuLayout(width, height)
 	state := menuState{}
+	layout := mainMenuLayout(width, height, len(state.splash()))
 
 	state.handleMouse(tcell.NewEventMouse(layout.x, layout.y+int(credits), tcell.Button1, tcell.ModNone), width, height)
 	if state.page != comingSoon || state.unavailableItem != credits {
@@ -125,5 +125,16 @@ func TestMouseActivatesMenuItem(t *testing.T) {
 	state.handleMouse(tcell.NewEventMouse(layout.x, layout.y+int(exit), tcell.Button1, tcell.ModNone), width, height)
 	if state.page != exitConfirmation || state.confirmExit {
 		t.Errorf("exit click = %#v, want confirmation with No selected", state)
+	}
+}
+
+func TestMouseHoverSelectsMenuItem(t *testing.T) {
+	const width, height = 80, 24
+	state := menuState{}
+	layout := mainMenuLayout(width, height, len(state.splash()))
+
+	state.handleMouse(tcell.NewEventMouse(layout.x, layout.y+int(puzzle), tcell.ButtonNone, tcell.ModNone), width, height)
+	if state.selected != puzzle || state.page != mainMenu {
+		t.Errorf("puzzle hover = %#v, want Puzzle selected on main menu", state)
 	}
 }

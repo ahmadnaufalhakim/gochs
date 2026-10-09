@@ -26,7 +26,7 @@ func Run() error {
 	defer screen.Fini()
 
 	screen.SetStyle(backgroundStyle)
-	screen.EnableMouse(tcell.MouseButtonEvents)
+	screen.EnableMouse(tcell.MouseButtonEvents, tcell.MouseMotionEvents)
 
 	run(screen)
 	return nil
