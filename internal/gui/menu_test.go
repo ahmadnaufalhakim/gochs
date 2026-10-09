@@ -138,3 +138,18 @@ func TestMouseHoverSelectsMenuItem(t *testing.T) {
 		t.Errorf("puzzle hover = %#v, want Puzzle selected on main menu", state)
 	}
 }
+
+func TestMouseHoverSelectsExitChoice(t *testing.T) {
+	const width, height = 80, 24
+	state := menuState{page: exitConfirmation}
+
+	state.handleMouse(tcell.NewEventMouse(width/2, height/2+1, tcell.ButtonNone, tcell.ModNone), width, height)
+	if !state.confirmExit || state.page != exitConfirmation {
+		t.Errorf("Yes hover = %#v, want Yes selected on confirmation page", state)
+	}
+
+	state.handleMouse(tcell.NewEventMouse(width/2, height/2-1, tcell.ButtonNone, tcell.ModNone), width, height)
+	if state.confirmExit || state.page != exitConfirmation {
+		t.Errorf("No hover = %#v, want No selected on confirmation page", state)
+	}
+}

@@ -186,13 +186,21 @@ func (s *menuState) handleMouse(event *tcell.EventMouse, width, height int) bool
 			s.showMainMenu()
 		}
 	case exitConfirmation:
-		if event.Buttons() != tcell.Button1 {
+		choice, ok := exitChoiceAt(x, y, width, height)
+		if !ok {
+			if event.Buttons() == tcell.Button1 {
+				s.showMainMenu()
+			}
 			return false
 		}
-		if confirmExitAt(x, y, width, height) {
-			return true
+
+		s.confirmExit = choice
+		if event.Buttons() == tcell.Button1 {
+			if choice {
+				return true
+			}
+			s.showMainMenu()
 		}
-		s.showMainMenu()
 	}
 
 	return false
@@ -322,12 +330,15 @@ func menuItemAt(x, y, width, height, splashHeight int) (menuItem, bool) {
 	return 0, false
 }
 
-func confirmExitAt(x, y, width, height int) bool {
-	if x < (width-14)/2 || x >= (width+14)/2 {
-		return false
+func exitChoiceAt(x, y, width, height int) (bool, bool) {
+	if y == height/2-1 && x >= (width-2)/2 && x < (width+2)/2 {
+		return false, true
+	}
+	if y == height/2+1 && x >= (width-15)/2 && x < (width+15)/2 {
+		return true, true
 	}
 
-	return y == height/2+1
+	return false, false
 }
 
 func longestLineWidth(lines []string) int {
