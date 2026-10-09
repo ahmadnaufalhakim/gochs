@@ -69,21 +69,20 @@ var pieceSplashes = [][]string{
 		"   /    \\   ",
 		"  (______)  ",
 		" (________) ",
-		" /________\\ ",
+		"(__________) ",
 	},
 	{
-		"    ()     ",
-		"  <~~~~>   ",
-		"   \\__/    ",
-		"  (____)    ",
-		"   |  |     ",
-		"   |  |     ",
-		"   |__|     ",
-		"  /____\\    ",
-		" (______)   ",
-		"(________)  ",
-		"/________\\  ",
-		"           ",
+		"     ()     ",
+		"   <~~~~>   ",
+		"    \\__/    ",
+		"   (____)    ",
+		"    |  |     ",
+		"    |  |     ",
+		"    |__|     ",
+		"   /____\\    ",
+		"  (______)   ",
+		" (________)  ",
+		"(__________)  ",
 	},
 	{
 		"     <>_    ",
@@ -96,12 +95,8 @@ var pieceSplashes = [][]string{
 		"  (______)  ",
 		" (________) ",
 		"(__________)  ",
-		"           ",
-		"           ",
 	},
 	{
-		"             ",
-		"             ",
 		"   WWWWWW    ",
 		"   WWWWWW    ",
 		"    |  |     ",
@@ -109,10 +104,6 @@ var pieceSplashes = [][]string{
 		"    |__|     ",
 		"   /____\\    ",
 		"  (______)   ",
-		"           ",
-		"           ",
-		"           ",
-		"           ",
 	},
 	{
 		"      __    ",
@@ -121,12 +112,6 @@ var pieceSplashes = [][]string{
 		"     /__\\    ",
 		"    (____)   ",
 		"   (______)  ",
-		"            ",
-		"            ",
-		"            ",
-		"            ",
-		"            ",
-		"            ",
 	},
 	{
 		"    __/\"\"\"\\   ",
@@ -136,11 +121,6 @@ var pieceSplashes = [][]string{
 		"      \\____/  ",
 		"      /____\\  ",
 		"     (______) ",
-		"             ",
-		"             ",
-		"             ",
-		"             ",
-		"             ",
 	},
 }
 
@@ -266,7 +246,7 @@ func drawMainMenu(screen tcell.Screen, state menuState) {
 	width, height := screen.Size()
 	layout := mainMenuLayout(width, height)
 
-	drawSplash(screen, layout.y-tallestSplash()-2, state.splashIndex)
+	drawSplash(screen, layout.y-tallestSplash()-1, state.splashIndex)
 	for item, label := range menuLabels {
 		style := backgroundStyle
 		if menuItem(item) == state.selected {
