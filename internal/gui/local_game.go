@@ -95,7 +95,7 @@ func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int)
 	}
 
 	if len(g.promotionChoices) != 0 {
-		character, ok := promotionOptionAt(x, y, layout)
+		character, ok := g.promotionOptionAt(x, y, layout)
 		if event.Buttons() == tcell.ButtonNone {
 			g.hoveredPromotion = 0
 			if ok {
@@ -150,7 +150,7 @@ func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int)
 		g.makeMove(candidates[0])
 	default:
 		g.promotionChoices = candidates
-		g.message = "Choose promotion: Q, R, B, or N"
+		g.message = ""
 	}
 }
 
@@ -188,7 +188,7 @@ func (g *localGameState) submitUCI() {
 	}
 	if len(uci) == 4 {
 		g.promotionChoices = candidates
-		g.message = "Choose promotion: Q, R, B, or N"
+		g.message = ""
 		return
 	}
 
@@ -311,12 +311,11 @@ func drawLocalGame(screen tcell.Screen, game localGameState) {
 		return
 	}
 
-	drawCentered(screen, layout.y-2, gameTitle(game), titleStyle)
 	drawBoard(screen, game, layout)
 	drawMoveHistory(screen, game, layout, width)
 	drawGameInput(screen, game, layout)
 	if len(game.promotionChoices) != 0 {
-		drawPromotionPopup(screen, game, layout)
+		drawPromotionPicker(screen, game, layout)
 	}
 }
 
@@ -461,6 +460,7 @@ func drawMoveHistory(screen tcell.Screen, game localGameState, layout boardLayou
 		return
 	}
 
+	drawString(screen, x, layout.y-2, gameTitle(game), titleStyle)
 	drawString(screen, x, layout.y, "Moves", titleStyle)
 	start, fullmoves := moveHistoryWindow(game.history)
 	for fullmove := start; fullmove < fullmoves; fullmove++ {
@@ -488,68 +488,82 @@ func drawGameInput(screen tcell.Screen, game localGameState, layout boardLayout)
 	drawString(screen, layout.x-2, y+3, "Esc: clear selection or return to menu", mutedStyle)
 }
 
-func drawPromotionPopup(screen tcell.Screen, game localGameState, layout boardLayout) {
-	x, y := promotionPopupPosition(layout)
-	popupStyle := backgroundStyle.Background(tcell.NewRGBColor(20, 28, 42))
-	popupTitleStyle := popupStyle.Foreground(tcell.NewRGBColor(224, 181, 85)).Bold(true)
-	popupMutedStyle := popupStyle.Foreground(tcell.NewRGBColor(157, 172, 191))
-	popupSelectedStyle := popupStyle.Background(tcell.NewRGBColor(224, 181, 85)).Foreground(tcell.NewRGBColor(10, 18, 33)).Bold(true)
-	for row := range 4 {
-		drawString(screen, x, y+row, "                  ", popupStyle)
+func drawPromotionPicker(screen tcell.Screen, game localGameState, layout boardLayout) {
+	target, ok := game.promotionTarget()
+	if !ok {
+		return
 	}
 
-	drawString(screen, x, y, "Choose promotion:", popupTitleStyle)
-	for index, character := range []rune{'n', 'q', 'b', 'r'} {
-		style := popupStyle
+	x, targetY := promotionScreenPosition(target, layout)
+	promotingColor := game.board.ColorToMove
+	foreground := tcell.ColorWhite
+	background := tcell.ColorBlack
+	if promotingColor == chess.Black {
+		foreground = tcell.ColorBlack
+		background = tcell.ColorWhite
+	}
+
+	for index, character := range promotionOptions {
+		style := backgroundStyle.Foreground(foreground).Background(background)
 		if game.hoveredPromotion == character {
-			style = popupSelectedStyle
+			style = style.Underline(true)
 		}
-		drawString(screen, x+index*4, y+1, promotionOptionLabel(character), style)
+		piece := chess.Piece{Color: promotingColor, Type: promotionPieceType(character)}
+		drawString(screen, x, targetY-index-1, piece.Label()+" ", style)
 	}
-	drawString(screen, x, y+2, "[Esc] to cancel", popupMutedStyle)
 }
 
-func promotionOptionLabel(character rune) string {
-	pieceType := chess.Knight
-	switch character {
-	case 'q':
-		pieceType = chess.Queen
-	case 'b':
-		pieceType = chess.Bishop
-	case 'r':
-		pieceType = chess.Rook
-	}
+var promotionOptions = []rune{'q', 'r', 'b', 'n'}
 
-	return "[" + chess.Piece{Color: chess.Black, Type: pieceType}.Label() + " ]"
-}
-
-func promotionPopupPosition(layout boardLayout) (int, int) {
-	return layout.x, layout.y + 2
-}
-
-func promotionOptionAt(x, y int, layout boardLayout) (rune, bool) {
-	popupX, popupY := promotionPopupPosition(layout)
-	if y != popupY+1 {
+func (g *localGameState) promotionOptionAt(x, y int, layout boardLayout) (rune, bool) {
+	target, ok := g.promotionTarget()
+	if !ok {
 		return 0, false
 	}
 
-	for index, character := range []rune{'n', 'q', 'b', 'r'} {
-		start := popupX + index*4
-		if x >= start && x < start+4 {
-			return character, true
-		}
+	popupX, targetY := promotionScreenPosition(target, layout)
+	if x < popupX || x >= popupX+squareWidth {
+		return 0, false
+	}
+	index := targetY - y - 1
+	if index < 0 || index >= len(promotionOptions) {
+		return 0, false
 	}
 
-	return 0, false
+	return promotionOptions[index], true
+}
+
+func (g *localGameState) promotionTarget() (chess.Square, bool) {
+	if len(g.promotionChoices) == 0 {
+		return chess.Square(0), false
+	}
+	return g.promotionChoices[0].To(), true
+}
+
+func promotionScreenPosition(square chess.Square, layout boardLayout) (int, int) {
+	return layout.x + int(square.File())*squareWidth, layout.y + 7 - int(square.Rank())
+}
+
+func promotionPieceType(character rune) chess.PieceType {
+	switch character {
+	case 'r':
+		return chess.Rook
+	case 'b':
+		return chess.Bishop
+	case 'n':
+		return chess.Knight
+	default:
+		return chess.Queen
+	}
 }
 
 func localBoardLayout(width, height int) (boardLayout, bool) {
-	if width < 48 || height < 16 {
+	if width < 48 || height < 20 {
 		return boardLayout{}, false
 	}
 
-	const panelHeight = 16
-	return boardLayout{x: (width - 42) / 2, y: (height-panelHeight)/2 + 2}, true
+	const panelHeight = 18
+	return boardLayout{x: (width - 42) / 2, y: (height-panelHeight)/2 + 4}, true
 }
 
 func squareAtScreenPosition(x, y int, layout boardLayout) (chess.Square, bool) {

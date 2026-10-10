@@ -121,22 +121,30 @@ func TestBrightenRGBCapsAllChannels(t *testing.T) {
 
 func TestPromotionOptionAt(t *testing.T) {
 	layout := boardLayout{x: 10, y: 4}
-	popupX, popupY := promotionPopupPosition(layout)
-	for index, want := range []rune{'n', 'q', 'b', 'r'} {
-		got, ok := promotionOptionAt(popupX+index*4, popupY+1, layout)
+	game := newLocalGameState(chess.WOOD)
+	target := guiSquare(t, "e8")
+	game.promotionChoices = []chess.Move{
+		chess.NewMove(guiSquare(t, "e7"), target, chess.PromoteQueen),
+	}
+	popupX, targetY := promotionScreenPosition(target, layout)
+	for index, want := range promotionOptions {
+		got, ok := game.promotionOptionAt(popupX+1, targetY-index-1, layout)
 		if !ok || got != want {
-			t.Errorf("promotionOptionAt(%d, %d) = %q, %t; want %q, true", popupX+index*4, popupY+1, got, ok, want)
+			t.Errorf("promotionOptionAt(%d, %d) = %q, %t; want %q, true", popupX+1, targetY-index-1, got, ok, want)
 		}
 	}
 
-	if _, ok := promotionOptionAt(popupX, popupY, layout); ok {
-		t.Error("promotionOptionAt accepted popup title")
+	if _, ok := game.promotionOptionAt(popupX+squareWidth, targetY-1, layout); ok {
+		t.Error("promotionOptionAt accepted a different file")
 	}
 }
 
-func TestPromotionOptionLabel(t *testing.T) {
-	if got := promotionOptionLabel('n'); got != "[♞ ]" {
-		t.Errorf("promotionOptionLabel('n') = %q, want [♞ ]", got)
+func TestPromotionPieceType(t *testing.T) {
+	if got := promotionPieceType('n'); got != chess.Knight {
+		t.Errorf("promotionPieceType('n') = %s, want Knight", got)
+	}
+	if got := promotionPieceType('q'); got != chess.Queen {
+		t.Errorf("promotionPieceType('q') = %s, want Queen", got)
 	}
 }
 
