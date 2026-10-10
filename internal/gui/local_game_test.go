@@ -222,7 +222,7 @@ func TestResignationEndsLocalGame(t *testing.T) {
 	if game.resignedBy == nil || *game.resignedBy != chess.White {
 		t.Errorf("resignedBy = %v, want White", game.resignedBy)
 	}
-	if got := gameTitle(game); got != "White resigned · Black wins" {
+	if got := gameTitle(game); got != "White resigned · Black wins 1-0" {
 		t.Errorf("gameTitle() = %q, want resignation result", got)
 	}
 
@@ -262,6 +262,53 @@ func TestResignButtonHover(t *testing.T) {
 	if game.hoveredResign {
 		t.Error("moving away from resign button did not clear hoveredResign")
 	}
+}
+
+func TestLocalGameAutomaticDraws(t *testing.T) {
+	t.Run("threefold repetition", func(t *testing.T) {
+		game := newLocalGameState(chess.WOOD)
+		for _, uci := range []string{
+			"g1f3", "g8f6", "f3g1", "f6g8",
+			"g1f3", "g8f6", "f3g1", "f6g8",
+		} {
+			game.uciInput = uci
+			game.submitUCI()
+		}
+		if game.drawReason != "Draw by threefold repetition" {
+			t.Errorf("drawReason = %q, want threefold repetition", game.drawReason)
+		}
+	})
+
+	t.Run("fifty move rule", func(t *testing.T) {
+		game := newLocalGameState(chess.WOOD)
+		game.board.HalfmoveClock = 99
+		game.uciInput = "g1f3"
+		game.submitUCI()
+		if game.drawReason != "Draw by fifty-move rule" {
+			t.Errorf("drawReason = %q, want fifty-move rule", game.drawReason)
+		}
+	})
+
+	t.Run("insufficient material", func(t *testing.T) {
+		game := newLocalGameState(chess.WOOD)
+		game.board.Clear()
+		game.board.SetPieceAt(guiSquare(t, "e1"), chess.Piece{Color: chess.White, Type: chess.King})
+		game.board.SetPieceAt(guiSquare(t, "e8"), chess.Piece{Color: chess.Black, Type: chess.King})
+		game.board.SetPieceAt(guiSquare(t, "b1"), chess.Piece{Color: chess.White, Type: chess.Knight})
+		game.board.ColorToMove = chess.White
+		game.positionCounts = map[uint64]uint{game.board.PositionKey(): 1}
+		game.uciInput = "b1c3"
+		game.submitUCI()
+		if game.drawReason != "Draw by insufficient material" {
+			t.Errorf("drawReason = %q, want insufficient material", game.drawReason)
+		}
+
+		game.uciInput = "e8e7"
+		game.submitUCI()
+		if game.board.PieceAt(guiSquare(t, "e8")) != (chess.Piece{Color: chess.Black, Type: chess.King}) {
+			t.Error("automatic draw accepted a later move")
+		}
+	})
 }
 
 func squareColor(theme chess.ColorTheme, square chess.Square) chess.RGB {

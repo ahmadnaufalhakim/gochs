@@ -24,6 +24,8 @@ type localGameState struct {
 	history          []string
 	lastMove         chess.Move
 	hasLastMove      bool
+	positionCounts   map[uint64]uint
+	drawReason       string
 	resignPending    bool
 	hoveredResign    bool
 	resignedBy       *chess.PieceColor
@@ -39,8 +41,9 @@ func newLocalGameState(theme chess.ColorTheme) localGameState {
 	board.Reset()
 
 	return localGameState{
-		board: board,
-		theme: theme,
+		board:          board,
+		theme:          theme,
+		positionCounts: map[uint64]uint{board.PositionKey(): 1},
 	}
 }
 
@@ -48,7 +51,7 @@ func (g *localGameState) handleKey(event *tcell.EventKey, width, height int) boo
 	if _, ok := localBoardLayout(width, height); !ok {
 		return event.Key() == tcell.KeyEsc
 	}
-	if g.hasResigned() {
+	if g.hasTerminalResult() {
 		return event.Key() == tcell.KeyEsc
 	}
 
@@ -104,7 +107,7 @@ func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int)
 	if !ok {
 		return
 	}
-	if g.hasResigned() {
+	if g.hasTerminalResult() {
 		return
 	}
 	if event.Buttons() == tcell.ButtonNone {
@@ -194,7 +197,7 @@ func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int)
 }
 
 func (g *localGameState) submitUCI() {
-	if g.hasResigned() {
+	if g.hasTerminalResult() {
 		return
 	}
 	uci := g.uciInput
@@ -249,7 +252,7 @@ func (g *localGameState) selectSource(square chess.Square) {
 }
 
 func (g *localGameState) updateHover(square chess.Square) {
-	if g.hasResigned() {
+	if g.hasTerminalResult() {
 		g.hoveredSquare = nil
 		return
 	}
@@ -327,7 +330,7 @@ func promotionMoveForRune(candidates []chess.Move, character rune) (chess.Move, 
 }
 
 func (g *localGameState) makeMove(move chess.Move) {
-	if g.hasResigned() {
+	if g.hasTerminalResult() {
 		return
 	}
 	san, err := g.board.SAN(move)
@@ -349,6 +352,32 @@ func (g *localGameState) makeMove(move chess.Move) {
 	g.hoveredPromotion = 0
 	g.uciInput = ""
 	g.message = ""
+	g.recordPosition()
+	g.updateDrawResult()
+}
+
+func (g *localGameState) recordPosition() {
+	if g.positionCounts == nil {
+		g.positionCounts = make(map[uint64]uint)
+	}
+	g.positionCounts[g.board.PositionKey()]++
+}
+
+func (g *localGameState) updateDrawResult() {
+	if len(chess.GenerateLegalMoves(g.board)) == 0 {
+		return
+	}
+	if g.board.HasInsufficientMaterial() {
+		g.drawReason = "Draw by insufficient material"
+		return
+	}
+	if g.positionCounts[g.board.PositionKey()] >= 3 {
+		g.drawReason = "Draw by threefold repetition"
+		return
+	}
+	if g.board.HalfmoveClock >= 100 {
+		g.drawReason = "Draw by fifty-move rule"
+	}
 }
 
 func (g *localGameState) resign() {
@@ -366,6 +395,10 @@ func (g *localGameState) resign() {
 
 func (g localGameState) hasResigned() bool {
 	return g.resignedBy != nil
+}
+
+func (g localGameState) hasTerminalResult() bool {
+	return g.hasResigned() || g.drawReason != ""
 }
 
 func drawLocalGame(screen tcell.Screen, game localGameState) {
@@ -389,10 +422,14 @@ func gameTitle(game localGameState) string {
 	if game.resignedBy != nil {
 		return fmt.Sprintf("%s resigned · %s wins %s", *game.resignedBy, game.resignedBy.Opponent(), game.resignedBy.EndResult())
 	}
+	if game.drawReason != "" {
+		return game.drawReason + " · ½-½"
+	}
 	legalMoves := chess.GenerateLegalMoves(game.board)
 	if len(legalMoves) == 0 {
 		if game.board.IsColorInCheck(game.board.ColorToMove) {
-			return fmt.Sprintf("Checkmate · %s wins %s", game.board.ColorToMove.Opponent(), game.resignedBy.EndResult())
+			winner := game.board.ColorToMove.Opponent()
+			return fmt.Sprintf("Checkmate · %s wins %s", winner, winner.EndResult())
 		}
 		return "Stalemate · ½-½"
 	}
@@ -406,7 +443,7 @@ func gameTitle(game localGameState) string {
 func drawBoard(screen tcell.Screen, game localGameState, layout boardLayout) {
 	renderer := chess.Renderer{Perspective: chess.White}
 	var legalMoves []chess.Move
-	if !game.hasResigned() {
+	if !game.hasTerminalResult() {
 		legalMoves = chess.GenerateLegalMoves(game.board)
 	}
 	for row := range 8 {
@@ -544,7 +581,7 @@ func drawMoveHistory(screen tcell.Screen, game localGameState, layout boardLayou
 		}
 		drawString(screen, x, row, line, backgroundStyle)
 	}
-	if !game.hasResigned() {
+	if !game.hasTerminalResult() {
 		drawResignButton(screen, game, layout)
 	}
 }
@@ -584,7 +621,7 @@ func (g localGameState) resignButtonAt(x, y int, layout boardLayout) bool {
 
 func drawGameInput(screen tcell.Screen, game localGameState, layout boardLayout) {
 	y := layout.y + 10
-	if game.hasResigned() {
+	if game.hasTerminalResult() {
 		drawString(screen, layout.x-2, y+3, "Esc: return to menu", mutedStyle)
 		return
 	}

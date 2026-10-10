@@ -263,12 +263,12 @@ func TestMakeMoveHandlesDoublePushPromotionAndEnPassant(t *testing.T) {
 		}
 	})
 
-	t.Run("double push creates target", func(t *testing.T) {
+	t.Run("double push without capture clears target", func(t *testing.T) {
 		var board Board
 		board.Reset()
 		requireMakeMove(t, &board, NewMove(e2, e4, DoublePawnPush))
-		if got, want := board.EnPassantTarget, e3.Mask(); got != want {
-			t.Errorf("EnPassantTarget = %#x, want %#x", got, want)
+		if board.EnPassantTarget != 0 {
+			t.Errorf("EnPassantTarget = %#x, want zero", board.EnPassantTarget)
 		}
 		if got := board.PieceAt(e4); got != (Piece{Color: White, Type: Pawn}) {
 			t.Errorf("piece at e4 = %#v, want white pawn", got)
@@ -297,6 +297,9 @@ func TestMakeMoveHandlesDoublePushPromotionAndEnPassant(t *testing.T) {
 		board.ColorToMove = Black
 
 		requireMakeMove(t, &board, NewMove(e7, e5, DoublePawnPush))
+		if got, want := board.EnPassantTarget, e6.Mask(); got != want {
+			t.Errorf("EnPassantTarget = %#x, want %#x", got, want)
+		}
 		requireMakeMove(t, &board, NewMove(d5, e6, EnPassant))
 		if got := board.PieceAt(e6); got != (Piece{Color: White, Type: Pawn}) {
 			t.Errorf("piece at e6 = %#v, want white pawn", got)
@@ -356,7 +359,7 @@ func TestInitialPositionPerft(t *testing.T) {
 	}
 }
 
-func TestEnPassantThatExposesKingIsNotLegal(t *testing.T) {
+func TestPinnedEnPassantDoesNotSetTarget(t *testing.T) {
 	var board Board
 	board.SetPieceAt(h5, Piece{Color: White, Type: King})
 	board.SetPieceAt(e8, Piece{Color: Black, Type: King})
@@ -366,9 +369,9 @@ func TestEnPassantThatExposesKingIsNotLegal(t *testing.T) {
 	board.ColorToMove = Black
 
 	requireMakeMove(t, &board, NewMove(f7, f5, DoublePawnPush))
-	enPassant := NewMove(g5, f6, EnPassant)
-	requireMove(t, GeneratePawnPseudoLegalMoves(board, White), enPassant)
-	requireNoMove(t, GenerateLegalMoves(board), enPassant)
+	if board.EnPassantTarget != 0 {
+		t.Errorf("EnPassantTarget = %#x, want zero", board.EnPassantTarget)
+	}
 }
 
 func standardCastlingBoard(color PieceColor, side CastlingSide) Board {
