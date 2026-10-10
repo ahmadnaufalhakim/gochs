@@ -507,12 +507,22 @@ func (g *localGameState) handleReviewMouse(event *tcell.EventMouse, layout board
 }
 
 func (g *localGameState) moveReplay(direction int) {
+	previousPly := g.viewPly
 	viewPly := min(max(0, g.viewPly+direction), len(g.moves))
-	if viewPly == g.viewPly {
+	if viewPly == previousPly {
 		return
 	}
 	g.viewPly = viewPly
-	g.syncHistoryToView(direction)
+	if replayFullmoveRow(previousPly) != replayFullmoveRow(viewPly) {
+		g.syncHistoryToView(direction)
+	}
+}
+
+func replayFullmoveRow(ply int) int {
+	if ply == 0 {
+		return -1
+	}
+	return (ply - 1) / 2
 }
 
 func (g *localGameState) syncHistoryToView(direction int) {

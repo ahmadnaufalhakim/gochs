@@ -472,13 +472,25 @@ func TestReplayHistoryViewportAnchoring(t *testing.T) {
 	game.positions = make([]chess.Board, 21)
 
 	game.viewPly = 12
+	game.historyScroll = 3
 	game.moveReplay(-1)
-	if game.viewPly != 11 || game.historyScroll != 4 {
-		t.Errorf("backward replay = ply %d, scroll %d; want ply 11, scroll 4", game.viewPly, game.historyScroll)
+	if game.viewPly != 11 || game.historyScroll != 3 {
+		t.Errorf("backward replay within fullmove = ply %d, scroll %d; want ply 11, scroll 3", game.viewPly, game.historyScroll)
+	}
+	game.moveReplay(-1)
+	if game.viewPly != 10 || game.historyScroll != 3 {
+		t.Errorf("backward replay across fullmove = ply %d, scroll %d; want ply 10, scroll 3", game.viewPly, game.historyScroll)
+	}
+
+	game.viewPly = 11
+	game.historyScroll = 4
+	game.moveReplay(1)
+	if game.viewPly != 12 || game.historyScroll != 4 {
+		t.Errorf("forward replay within fullmove = ply %d, scroll %d; want ply 12, scroll 4", game.viewPly, game.historyScroll)
 	}
 	game.moveReplay(1)
-	if game.viewPly != 12 || game.historyScroll != 3 {
-		t.Errorf("forward replay = ply %d, scroll %d; want ply 12, scroll 3", game.viewPly, game.historyScroll)
+	if game.viewPly != 13 || game.historyScroll != 4 {
+		t.Errorf("forward replay across fullmove = ply %d, scroll %d; want ply 13, scroll 4", game.viewPly, game.historyScroll)
 	}
 	game.viewPly = 1
 	game.syncHistoryToView(-1)
