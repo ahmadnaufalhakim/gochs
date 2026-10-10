@@ -212,3 +212,16 @@ func TestThemeMenuChangesTheme(t *testing.T) {
 		t.Errorf("Esc from theme menu = %d, want Options menu", state.page)
 	}
 }
+
+func TestOptionsMenuTogglesAutoFlip(t *testing.T) {
+	state := menuState{page: optionsMenu, optionsSelected: autoFlip}
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if !state.autoFlip || state.page != optionsMenu {
+		t.Errorf("auto-flip activation = %#v, want enabled in Options", state)
+	}
+
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if state.autoFlip {
+		t.Error("second auto-flip activation did not disable it")
+	}
+}

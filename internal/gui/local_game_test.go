@@ -34,13 +34,30 @@ func TestSquareAtScreenPosition(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		square, ok := squareAtScreenPosition(test.x, test.y, layout)
+		square, ok := squareAtScreenPosition(test.x, test.y, layout, chess.White)
 		if ok != test.ok {
 			t.Errorf("squareAtScreenPosition(%d, %d) ok = %t, want %t", test.x, test.y, ok, test.ok)
 			continue
 		}
 		if ok && square.String() != test.want {
 			t.Errorf("squareAtScreenPosition(%d, %d) = %s, want %s", test.x, test.y, square, test.want)
+		}
+	}
+}
+
+func TestSquareAtScreenPositionFromBlackPerspective(t *testing.T) {
+	layout := boardLayout{x: 10, y: 2}
+	for _, test := range []struct {
+		x    int
+		y    int
+		want string
+	}{
+		{10, 2, "h1"},
+		{25, 9, "a8"},
+	} {
+		square, ok := squareAtScreenPosition(test.x, test.y, layout, chess.Black)
+		if !ok || square.String() != test.want {
+			t.Errorf("black squareAtScreenPosition(%d, %d) = %s, %t; want %s, true", test.x, test.y, square, ok, test.want)
 		}
 	}
 }
@@ -127,7 +144,7 @@ func TestPromotionOptionAt(t *testing.T) {
 	game.promotionChoices = []chess.Move{
 		chess.NewMove(guiSquare(t, "e7"), target, chess.PromoteQueen),
 	}
-	popupX, targetY := promotionScreenPosition(target, layout)
+	popupX, targetY := promotionScreenPosition(target, layout, chess.White)
 	for index, want := range promotionOptions {
 		got, ok := game.promotionOptionAt(popupX+1, targetY-index-1, layout)
 		if !ok || got != want {
@@ -262,6 +279,37 @@ func TestResignButtonHover(t *testing.T) {
 	game.handleMouse(tcell.NewEventMouse(layout.x, layout.y, tcell.ButtonNone, tcell.ModNone), 80, 24)
 	if game.hoveredResign {
 		t.Error("moving away from resign button did not clear hoveredResign")
+	}
+}
+
+func TestManualAndAutomaticBoardFlip(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("local board layout is unavailable")
+	}
+	buttonX, buttonY := flipButtonPosition(layout)
+
+	game.handleMouse(tcell.NewEventMouse(buttonX, buttonY, tcell.ButtonNone, tcell.ModNone), 80, 24)
+	if !game.hoveredFlip {
+		t.Error("hovering flip button did not set hoveredFlip")
+	}
+	game.handleMouse(tcell.NewEventMouse(buttonX, buttonY, tcell.Button1, tcell.ModNone), 80, 24)
+	if game.perspective != chess.Black {
+		t.Errorf("manual flip perspective = %s, want Black", game.perspective)
+	}
+
+	game = newLocalGameState(chess.WOOD)
+	game.autoFlip = true
+	game.uciInput = "e2e4"
+	game.submitUCI()
+	if game.perspective != chess.Black {
+		t.Errorf("perspective after White move = %s, want Black", game.perspective)
+	}
+	game.uciInput = "e7e5"
+	game.submitUCI()
+	if game.perspective != chess.White {
+		t.Errorf("perspective after Black move = %s, want White", game.perspective)
 	}
 }
 

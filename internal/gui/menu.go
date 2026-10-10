@@ -57,14 +57,10 @@ type optionsMenuItem uint8
 
 const (
 	theme optionsMenuItem = iota
+	autoFlip
 	optionsBack
 	optionsMenuItemCount
 )
-
-var optionsMenuLabels = [optionsMenuItemCount]string{
-	"Theme",
-	"Back",
-}
 
 type menuState struct {
 	page            page
@@ -76,6 +72,7 @@ type menuState struct {
 	splashIndex     int
 	result          Result
 	theme           chess.ColorTheme
+	autoFlip        bool
 }
 
 type menuLayout struct {
@@ -197,6 +194,8 @@ func (s *menuState) handleKey(event *tcell.EventKey) bool {
 		case tcell.KeyEnter:
 			if s.optionsSelected == theme {
 				s.page = themeMenu
+			} else if s.optionsSelected == autoFlip {
+				s.autoFlip = !s.autoFlip
 			} else {
 				s.showMainMenu()
 			}
@@ -270,12 +269,14 @@ func (s *menuState) handleMouse(event *tcell.EventMouse, width, height int) bool
 			}
 		}
 	case optionsMenu:
-		item, ok := optionsMenuItemAt(x, y, width, height)
+		item, ok := optionsMenuItemAt(x, y, width, height, s.autoFlip)
 		if ok {
 			s.optionsSelected = item
 			if event.Buttons() == tcell.Button1 {
 				if item == theme {
 					s.page = themeMenu
+				} else if item == autoFlip {
+					s.autoFlip = !s.autoFlip
 				} else {
 					s.showMainMenu()
 				}
@@ -395,7 +396,7 @@ func draw(screen tcell.Screen, state menuState) {
 	case playMenu:
 		drawPlayMenu(screen, state.playSelected)
 	case optionsMenu:
-		drawOptionsMenu(screen, state.optionsSelected)
+		drawOptionsMenu(screen, state.optionsSelected, state.autoFlip)
 	case themeMenu:
 		drawThemeMenu(screen, state.theme)
 	case comingSoon:
@@ -448,12 +449,13 @@ func drawPlayMenu(screen tcell.Screen, selected playMenuItem) {
 	drawCentered(screen, layout.y+int(playMenuItemCount)+1, "Up/Down to select  Enter to choose", mutedStyle)
 }
 
-func drawOptionsMenu(screen tcell.Screen, selected optionsMenuItem) {
+func drawOptionsMenu(screen tcell.Screen, selected optionsMenuItem, autoFlipEnabled bool) {
 	width, height := screen.Size()
-	layout := simpleMenuLayout(width, height, optionsMenuLabels[:])
+	labels := optionsLabels(autoFlipEnabled)
+	layout := simpleMenuLayout(width, height, labels)
 
 	drawCentered(screen, layout.y-3, "Options", titleStyle)
-	for item, label := range optionsMenuLabels {
+	for item, label := range labels {
 		style := backgroundStyle
 		if optionsMenuItem(item) == selected {
 			style = selectedStyle
@@ -461,6 +463,14 @@ func drawOptionsMenu(screen tcell.Screen, selected optionsMenuItem) {
 		drawPaddedString(screen, layout.x, layout.y+item, layout.width, label, style)
 	}
 	drawCentered(screen, layout.y+int(optionsMenuItemCount)+1, "Up/Down to select  Enter to choose", mutedStyle)
+}
+
+func optionsLabels(autoFlipEnabled bool) []string {
+	autoFlipLabel := "Auto-flip: Off"
+	if autoFlipEnabled {
+		autoFlipLabel = "Auto-flip: On"
+	}
+	return []string{"Theme", autoFlipLabel, "Back"}
 }
 
 func drawThemeMenu(screen tcell.Screen, current chess.ColorTheme) {
@@ -562,8 +572,8 @@ func playMenuItemAt(x, y, width, height int) (playMenuItem, bool) {
 	return 0, false
 }
 
-func optionsMenuItemAt(x, y, width, height int) (optionsMenuItem, bool) {
-	layout := simpleMenuLayout(width, height, optionsMenuLabels[:])
+func optionsMenuItemAt(x, y, width, height int, autoFlipEnabled bool) (optionsMenuItem, bool) {
+	layout := simpleMenuLayout(width, height, optionsLabels(autoFlipEnabled))
 	if x < layout.x || x >= layout.x+layout.width {
 		return 0, false
 	}

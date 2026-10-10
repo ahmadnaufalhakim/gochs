@@ -15,6 +15,8 @@ const squareWidth = 2
 type localGameState struct {
 	board            chess.Board
 	theme            chess.ColorTheme
+	perspective      chess.PieceColor
+	autoFlip         bool
 	selectedSource   *chess.Square
 	hoveredSquare    *chess.Square
 	promotionChoices []chess.Move
@@ -29,6 +31,7 @@ type localGameState struct {
 	terminalTitle    string
 	resignPending    bool
 	hoveredResign    bool
+	hoveredFlip      bool
 	resignedBy       *chess.PieceColor
 }
 
@@ -44,6 +47,7 @@ func newLocalGameState(theme chess.ColorTheme) localGameState {
 	return localGameState{
 		board:          board,
 		theme:          theme,
+		perspective:    chess.White,
 		positionCounts: map[uint64]uint{board.PositionKey(): 1},
 	}
 }
@@ -113,7 +117,8 @@ func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int)
 	}
 	if event.Buttons() == tcell.ButtonNone {
 		g.hoveredResign = g.resignButtonAt(x, y, layout)
-		if g.hoveredResign {
+		g.hoveredFlip = flipButtonAt(x, y, layout)
+		if g.hoveredResign || g.hoveredFlip {
 			return
 		}
 	}
@@ -151,10 +156,15 @@ func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int)
 			g.hoveredResign = false
 			return
 		}
+		if flipButtonAt(x, y, layout) {
+			g.flipBoard()
+			return
+		}
 		g.hoveredResign = false
+		g.hoveredFlip = false
 	}
 
-	square, ok := squareAtScreenPosition(x, y, layout)
+	square, ok := squareAtScreenPosition(x, y, layout, g.perspective)
 	if !ok {
 		if event.Buttons() == tcell.Button1 {
 			g.selectedSource = nil
@@ -355,6 +365,16 @@ func (g *localGameState) makeMove(move chess.Move) {
 	g.message = ""
 	g.recordPosition()
 	g.updateTerminalResult()
+	if g.autoFlip {
+		g.perspective = g.board.ColorToMove
+	}
+}
+
+func (g *localGameState) flipBoard() {
+	g.perspective = g.perspective.Opponent()
+	g.selectedSource = nil
+	g.hoveredSquare = nil
+	g.hoveredFlip = true
 }
 
 func (g *localGameState) recordPosition() {
@@ -452,7 +472,7 @@ func gameTitle(game localGameState) string {
 }
 
 func drawBoard(screen tcell.Screen, game localGameState, layout boardLayout) {
-	renderer := chess.Renderer{Perspective: chess.White}
+	renderer := chess.Renderer{Perspective: game.perspective}
 	var legalMoves []chess.Move
 	if !game.hasTerminalResult() {
 		legalMoves = chess.GenerateLegalMoves(game.board)
@@ -594,6 +614,7 @@ func drawMoveHistory(screen tcell.Screen, game localGameState, layout boardLayou
 	}
 	if !game.hasTerminalResult() {
 		drawResignButton(screen, game, layout)
+		drawFlipButton(screen, game, layout)
 	}
 }
 
@@ -630,6 +651,24 @@ func (g localGameState) resignButtonAt(x, y int, layout boardLayout) bool {
 	return y == buttonY && x >= buttonX && x < buttonX+runewidth.StringWidth(resignButtonLabel(g.resignPending))
 }
 
+func drawFlipButton(screen tcell.Screen, game localGameState, layout boardLayout) {
+	x, y := flipButtonPosition(layout)
+	style := backgroundStyle
+	if game.hoveredFlip {
+		style = selectedStyle
+	}
+	drawString(screen, x, y, "[↻ ] Flip board", style)
+}
+
+func flipButtonPosition(layout boardLayout) (int, int) {
+	return layout.x + 20, layout.y + 8
+}
+
+func flipButtonAt(x, y int, layout boardLayout) bool {
+	buttonX, buttonY := flipButtonPosition(layout)
+	return y == buttonY && x >= buttonX && x < buttonX+runewidth.StringWidth("[↻ ] Flip board")
+}
+
 func drawGameInput(screen tcell.Screen, game localGameState, layout boardLayout) {
 	y := layout.y + 10
 	if game.hasTerminalResult() {
@@ -649,7 +688,7 @@ func drawPromotionPicker(screen tcell.Screen, game localGameState, layout boardL
 		return
 	}
 
-	x, targetY := promotionScreenPosition(target, layout)
+	x, targetY := promotionScreenPosition(target, layout, game.perspective)
 	promotingColor := game.board.ColorToMove
 	foreground := tcell.ColorWhite
 	background := tcell.ColorBlack
@@ -676,7 +715,7 @@ func (g *localGameState) promotionOptionAt(x, y int, layout boardLayout) (rune, 
 		return 0, false
 	}
 
-	popupX, targetY := promotionScreenPosition(target, layout)
+	popupX, targetY := promotionScreenPosition(target, layout, g.perspective)
 	if x < popupX || x >= popupX+squareWidth {
 		return 0, false
 	}
@@ -695,7 +734,10 @@ func (g *localGameState) promotionTarget() (chess.Square, bool) {
 	return g.promotionChoices[0].To(), true
 }
 
-func promotionScreenPosition(square chess.Square, layout boardLayout) (int, int) {
+func promotionScreenPosition(square chess.Square, layout boardLayout, perspective chess.PieceColor) (int, int) {
+	if perspective == chess.Black {
+		return layout.x + (7-int(square.File()))*squareWidth, layout.y + int(square.Rank())
+	}
 	return layout.x + int(square.File())*squareWidth, layout.y + 7 - int(square.Rank())
 }
 
@@ -721,13 +763,13 @@ func localBoardLayout(width, height int) (boardLayout, bool) {
 	return boardLayout{x: (width - 42) / 2, y: (height-panelHeight)/2 + 4}, true
 }
 
-func squareAtScreenPosition(x, y int, layout boardLayout) (chess.Square, bool) {
+func squareAtScreenPosition(x, y int, layout boardLayout, perspective chess.PieceColor) (chess.Square, bool) {
 	if x < layout.x || x >= layout.x+8*squareWidth || y < layout.y || y >= layout.y+8 {
 		return chess.Square(0), false
 	}
 
 	row := y - layout.y
 	column := (x - layout.x) / squareWidth
-	renderer := chess.Renderer{Perspective: chess.White}
+	renderer := chess.Renderer{Perspective: perspective}
 	return renderer.SquareAt(row, column), true
 }

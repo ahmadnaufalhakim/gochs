@@ -74,6 +74,7 @@ func run(screen tcell.Screen) Result {
 			if state.handleKey(event) {
 				if state.result == LocalGame {
 					newGame := newLocalGameState(state.theme)
+					newGame.autoFlip = state.autoFlip
 					game = &newGame
 					state.result = Exit
 				} else {
@@ -92,6 +93,7 @@ func run(screen tcell.Screen) Result {
 			if state.handleMouse(event, width, height) {
 				if state.result == LocalGame {
 					newGame := newLocalGameState(state.theme)
+					newGame.autoFlip = state.autoFlip
 					game = &newGame
 					state.result = Exit
 				} else {
