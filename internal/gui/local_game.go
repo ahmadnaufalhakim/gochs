@@ -136,6 +136,12 @@ func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int)
 			if move, ok := g.promotionMove(character); ok {
 				g.makeMove(move)
 			}
+			return
+		}
+		if event.Buttons() == tcell.Button1 {
+			g.promotionChoices = nil
+			g.hoveredPromotion = 0
+			g.message = "Promotion cancelled"
 		}
 		return
 	}

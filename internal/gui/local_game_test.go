@@ -157,6 +157,26 @@ func TestPromotionOptionAt(t *testing.T) {
 	}
 }
 
+func TestPromotionOutsideClickCancelsSelection(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("local board layout is unavailable")
+	}
+	target := guiSquare(t, "e8")
+	game.promotionChoices = []chess.Move{
+		chess.NewMove(guiSquare(t, "e7"), target, chess.PromoteQueen),
+	}
+
+	game.handleMouse(tcell.NewEventMouse(layout.x, layout.y+7, tcell.Button1, tcell.ModNone), 80, 24)
+	if game.promotionChoices != nil {
+		t.Errorf("outside click left promotion choices active: %v", game.promotionChoices)
+	}
+	if game.message != "Promotion cancelled" {
+		t.Errorf("message = %q, want promotion cancellation", game.message)
+	}
+}
+
 func TestPromotionPieceType(t *testing.T) {
 	if got := promotionPieceType('n'); got != chess.Knight {
 		t.Errorf("promotionPieceType('n') = %s, want Knight", got)
