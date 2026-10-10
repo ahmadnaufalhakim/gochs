@@ -26,6 +26,7 @@ type localGameState struct {
 	hasLastMove      bool
 	positionCounts   map[uint64]uint
 	drawReason       string
+	terminalTitle    string
 	resignPending    bool
 	hoveredResign    bool
 	resignedBy       *chess.PieceColor
@@ -353,7 +354,7 @@ func (g *localGameState) makeMove(move chess.Move) {
 	g.uciInput = ""
 	g.message = ""
 	g.recordPosition()
-	g.updateDrawResult()
+	g.updateTerminalResult()
 }
 
 func (g *localGameState) recordPosition() {
@@ -363,20 +364,30 @@ func (g *localGameState) recordPosition() {
 	g.positionCounts[g.board.PositionKey()]++
 }
 
-func (g *localGameState) updateDrawResult() {
-	if len(chess.GenerateLegalMoves(g.board)) == 0 {
+func (g *localGameState) updateTerminalResult() {
+	legalMoves := chess.GenerateLegalMoves(g.board)
+	if len(legalMoves) == 0 {
+		if g.board.IsColorInCheck(g.board.ColorToMove) {
+			winner := g.board.ColorToMove.Opponent()
+			g.terminalTitle = fmt.Sprintf("Checkmate · %s wins %s", winner, winner.EndResult())
+		} else {
+			g.terminalTitle = "Stalemate · ½-½"
+		}
 		return
 	}
 	if g.board.HasInsufficientMaterial() {
 		g.drawReason = "Draw by insufficient material"
+		g.terminalTitle = g.drawReason + " · ½-½"
 		return
 	}
 	if g.positionCounts[g.board.PositionKey()] >= 3 {
 		g.drawReason = "Draw by threefold repetition"
+		g.terminalTitle = g.drawReason + " · ½-½"
 		return
 	}
 	if g.board.HalfmoveClock >= 100 {
 		g.drawReason = "Draw by fifty-move rule"
+		g.terminalTitle = g.drawReason + " · ½-½"
 	}
 }
 
@@ -398,7 +409,7 @@ func (g localGameState) hasResigned() bool {
 }
 
 func (g localGameState) hasTerminalResult() bool {
-	return g.hasResigned() || g.drawReason != ""
+	return g.hasResigned() || g.terminalTitle != ""
 }
 
 func drawLocalGame(screen tcell.Screen, game localGameState) {
@@ -422,8 +433,8 @@ func gameTitle(game localGameState) string {
 	if game.resignedBy != nil {
 		return fmt.Sprintf("%s resigned · %s wins %s", *game.resignedBy, game.resignedBy.Opponent(), game.resignedBy.EndResult())
 	}
-	if game.drawReason != "" {
-		return game.drawReason + " · ½-½"
+	if game.terminalTitle != "" {
+		return game.terminalTitle
 	}
 	legalMoves := chess.GenerateLegalMoves(game.board)
 	if len(legalMoves) == 0 {

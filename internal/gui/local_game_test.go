@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
@@ -309,6 +310,78 @@ func TestLocalGameAutomaticDraws(t *testing.T) {
 			t.Error("automatic draw accepted a later move")
 		}
 	})
+}
+
+func TestLocalGameCheckmateAndStalemateAreTerminal(t *testing.T) {
+	t.Run("checkmate", func(t *testing.T) {
+		game := newLocalGameState(chess.WOOD)
+		for _, uci := range []string{"f2f3", "e7e5", "g2g4", "d8h4"} {
+			game.uciInput = uci
+			game.submitUCI()
+		}
+		if game.terminalTitle != "Checkmate · Black wins 0-1" {
+			t.Errorf("terminalTitle = %q, want checkmate", game.terminalTitle)
+		}
+		assertTerminalGameBlocksInput(t, &game)
+		assertTerminalControlsHidden(t, game)
+	})
+
+	t.Run("stalemate", func(t *testing.T) {
+		game := newLocalGameState(chess.WOOD)
+		game.board.Clear()
+		game.board.SetPieceAt(guiSquare(t, "c6"), chess.Piece{Color: chess.White, Type: chess.King})
+		game.board.SetPieceAt(guiSquare(t, "d7"), chess.Piece{Color: chess.White, Type: chess.Queen})
+		game.board.SetPieceAt(guiSquare(t, "a8"), chess.Piece{Color: chess.Black, Type: chess.King})
+		game.board.ColorToMove = chess.White
+		game.positionCounts = map[uint64]uint{game.board.PositionKey(): 1}
+		game.uciInput = "d7c7"
+		game.submitUCI()
+		if game.terminalTitle != "Stalemate · ½-½" {
+			t.Errorf("terminalTitle = %q, want stalemate", game.terminalTitle)
+		}
+		assertTerminalGameBlocksInput(t, &game)
+		assertTerminalControlsHidden(t, game)
+	})
+}
+
+func assertTerminalGameBlocksInput(t *testing.T, game *localGameState) {
+	t.Helper()
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("local board layout is unavailable")
+	}
+	buttonX, buttonY := resignButtonPosition(layout)
+	before := game.board
+
+	game.uciInput = "a2a3"
+	game.submitUCI()
+	game.handleMouse(tcell.NewEventMouse(buttonX, buttonY, tcell.Button1, tcell.ModNone), 80, 24)
+	if game.resignedBy != nil {
+		t.Error("terminal game accepted resignation")
+	}
+	if game.board != before {
+		t.Error("terminal game accepted a move")
+	}
+}
+
+func assertTerminalControlsHidden(t *testing.T, game localGameState) {
+	t.Helper()
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 24)
+
+	drawLocalGame(screen, game)
+	screen.Show()
+	contents, width, height := screen.GetContents()
+	text := screenText(contents, width, height)
+	for _, label := range []string{"Your move (UCI):", "Resign"} {
+		if strings.Contains(text, label) {
+			t.Errorf("terminal game rendered %q", label)
+		}
+	}
 }
 
 func squareColor(theme chess.ColorTheme, square chess.Square) chess.RGB {
