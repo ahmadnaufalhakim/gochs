@@ -17,6 +17,7 @@ type localGameState struct {
 	selectedSource   *chess.Square
 	hoveredSquare    *chess.Square
 	promotionChoices []chess.Move
+	hoveredPromotion rune
 	input            string
 	message          string
 	history          []chess.Move
@@ -94,8 +95,16 @@ func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int)
 	}
 
 	if len(g.promotionChoices) != 0 {
-		if event.Buttons() == tcell.Button1 {
-			if move, ok := g.promotionMoveAt(x, y, layout); ok {
+		character, ok := promotionOptionAt(x, y, layout)
+		if event.Buttons() == tcell.ButtonNone {
+			g.hoveredPromotion = 0
+			if ok {
+				g.hoveredPromotion = character
+			}
+			return
+		}
+		if event.Buttons() == tcell.Button1 && ok {
+			if move, ok := g.promotionMove(character); ok {
 				g.makeMove(move)
 			}
 		}
@@ -104,6 +113,10 @@ func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int)
 
 	square, ok := squareAtScreenPosition(x, y, layout)
 	if !ok {
+		if event.Buttons() == tcell.Button1 {
+			g.selectedSource = nil
+			g.hoveredSquare = nil
+		}
 		return
 	}
 
@@ -127,8 +140,12 @@ func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int)
 	candidates := g.movesForTarget(square, legalMoves)
 	switch len(candidates) {
 	case 0:
-		g.selectedSource = nil
-		g.message = ""
+		if g.isSelectableSource(square, legalMoves) {
+			g.selectSource(square)
+		} else {
+			g.selectedSource = nil
+			g.message = ""
+		}
 	case 1:
 		g.makeMove(candidates[0])
 	default:
@@ -263,21 +280,6 @@ func promotionMoveForRune(candidates []chess.Move, character rune) (chess.Move, 
 	return chess.Move(0), false
 }
 
-func (g *localGameState) promotionMoveAt(x, y int, layout boardLayout) (chess.Move, bool) {
-	if y != layout.y+12 {
-		return chess.Move(0), false
-	}
-
-	for index, character := range []rune{'q', 'r', 'b', 'n'} {
-		start := layout.x + index*4
-		if x >= start && x < start+3 {
-			return g.promotionMove(character)
-		}
-	}
-
-	return chess.Move(0), false
-}
-
 func (g *localGameState) makeMove(move chess.Move) {
 	if err := g.board.MakeMove(move); err != nil {
 		g.message = err.Error()
@@ -290,6 +292,7 @@ func (g *localGameState) makeMove(move chess.Move) {
 	g.selectedSource = nil
 	g.hoveredSquare = nil
 	g.promotionChoices = nil
+	g.hoveredPromotion = 0
 	g.input = ""
 	g.message = ""
 }
@@ -303,10 +306,13 @@ func drawLocalGame(screen tcell.Screen, game localGameState) {
 		return
 	}
 
-	drawCentered(screen, 0, gameTitle(game), titleStyle)
+	drawCentered(screen, layout.y-2, gameTitle(game), titleStyle)
 	drawBoard(screen, game, layout)
 	drawMoveHistory(screen, game, layout, width)
 	drawGameInput(screen, game, layout)
+	if len(game.promotionChoices) != 0 {
+		drawPromotionPopup(screen, game, layout)
+	}
 }
 
 func gameTitle(game localGameState) string {
@@ -351,18 +357,22 @@ func squareStyle(game localGameState, square chess.Square, legalMoves []chess.Mo
 		color = dark
 	}
 
-	if game.board.IsColorInCheck(game.board.ColorToMove) {
-		if king, ok := game.board.Pieces[game.board.ColorToMove][chess.King].SingleSquare(); ok && king == square {
-			color = chess.RGB{R: 205, G: 50, B: 50}
-		}
-	} else if game.selectedSource != nil && *game.selectedSource == square {
+	kingInCheck := false
+	if king, ok := game.board.Pieces[game.board.ColorToMove][chess.King].SingleSquare(); ok {
+		kingInCheck = game.board.IsColorInCheck(game.board.ColorToMove) && king == square
+	}
+
+	if kingInCheck {
+		color = chess.RGB{R: 205, G: 50, B: 50}
+	}
+	if game.selectedSource != nil && *game.selectedSource == square {
 		color = adjustRGB(color, 28, 28, 70)
 	} else if game.selectedSource != nil && containsTarget(game, square, legalMoves) {
-		color = adjustRGB(color, 0, 55, 0)
-	} else if game.hasLastMove && (game.lastMove.From() == square || game.lastMove.To() == square) {
-		color = adjustRGB(color, 0, 31, 0)
+		color.G = 255
 	} else if game.hoveredSquare != nil && *game.hoveredSquare == square {
-		color = adjustRGB(color, 35, 35, 0)
+		color = darkenRGB(color, 71)
+	} else if game.hasLastMove && (game.lastMove.From() == square || game.lastMove.To() == square) {
+		color = brightenRGB(color, 31)
 	}
 
 	return backgroundStyle.Background(tcell.NewRGBColor(int32(color.R), int32(color.G), int32(color.B))), color
@@ -386,12 +396,36 @@ func adjustRGB(color chess.RGB, red, green, blue uint8) chess.RGB {
 	}
 }
 
+func brightenRGB(color chess.RGB, amount uint8) chess.RGB {
+	return chess.RGB{
+		R: saturatingAdd(color.R, amount),
+		G: saturatingAdd(color.G, amount),
+		B: saturatingAdd(color.B, amount),
+	}
+}
+
+func darkenRGB(color chess.RGB, amount uint8) chess.RGB {
+	return chess.RGB{
+		R: saturatingSubtract(color.R, amount),
+		G: saturatingSubtract(color.G, amount),
+		B: saturatingSubtract(color.B, amount),
+	}
+}
+
 func saturatingAdd(value, amount uint8) uint8 {
 	if 255-value < amount {
 		return 255
 	}
 
 	return value + amount
+}
+
+func saturatingSubtract(value, amount uint8) uint8 {
+	if value < amount {
+		return 0
+	}
+
+	return value - amount
 }
 
 func drawPiece(screen tcell.Screen, x, y int, piece chess.Piece, style tcell.Style, background chess.RGB) {
@@ -423,17 +457,21 @@ func drawMoveHistory(screen tcell.Screen, game localGameState, layout boardLayou
 	}
 
 	drawString(screen, x, layout.y, "Moves", titleStyle)
-	for index := 0; index < len(game.history); index += 2 {
-		row := layout.y + 2 + index/2
-		if row >= layout.y+8 {
-			break
-		}
-		line := fmt.Sprintf("%d. %s", index/2+1, game.history[index])
+	start, fullmoves := moveHistoryWindow(game.history)
+	for fullmove := start; fullmove < fullmoves; fullmove++ {
+		index := fullmove * 2
+		row := layout.y + 2 + fullmove - start
+		line := fmt.Sprintf("%d. %s", fullmove+1, game.history[index])
 		if index+1 < len(game.history) {
 			line += "  " + game.history[index+1].String()
 		}
 		drawString(screen, x, row, line, backgroundStyle)
 	}
+}
+
+func moveHistoryWindow(history []chess.Move) (start, end int) {
+	end = (len(history) + 1) / 2
+	return max(0, end-6), end
 }
 
 func drawGameInput(screen tcell.Screen, game localGameState, layout boardLayout) {
@@ -442,10 +480,62 @@ func drawGameInput(screen tcell.Screen, game localGameState, layout boardLayout)
 	if game.message != "" {
 		drawString(screen, layout.x-2, y+1, game.message, mutedStyle)
 	}
-	if len(game.promotionChoices) != 0 {
-		drawString(screen, layout.x, layout.y+12, "[Q] [R] [B] [N]", selectedStyle)
-	}
 	drawString(screen, layout.x-2, y+3, "Esc: clear selection or return to menu", mutedStyle)
+}
+
+func drawPromotionPopup(screen tcell.Screen, game localGameState, layout boardLayout) {
+	x, y := promotionPopupPosition(layout)
+	popupStyle := backgroundStyle.Background(tcell.NewRGBColor(20, 28, 42))
+	popupTitleStyle := popupStyle.Foreground(tcell.NewRGBColor(224, 181, 85)).Bold(true)
+	popupMutedStyle := popupStyle.Foreground(tcell.NewRGBColor(157, 172, 191))
+	popupSelectedStyle := popupStyle.Background(tcell.NewRGBColor(224, 181, 85)).Foreground(tcell.NewRGBColor(10, 18, 33)).Bold(true)
+	for row := range 4 {
+		drawString(screen, x, y+row, "                  ", popupStyle)
+	}
+
+	drawString(screen, x, y, "Choose promotion:", popupTitleStyle)
+	for index, character := range []rune{'n', 'q', 'b', 'r'} {
+		style := popupStyle
+		if game.hoveredPromotion == character {
+			style = popupSelectedStyle
+		}
+		drawString(screen, x+index*4, y+1, promotionOptionLabel(character), style)
+	}
+	drawString(screen, x, y+2, "[Esc] to cancel", popupMutedStyle)
+}
+
+func promotionOptionLabel(character rune) string {
+	pieceType := chess.Knight
+	switch character {
+	case 'q':
+		pieceType = chess.Queen
+	case 'b':
+		pieceType = chess.Bishop
+	case 'r':
+		pieceType = chess.Rook
+	}
+
+	return "[" + chess.Piece{Color: chess.Black, Type: pieceType}.Label() + " ]"
+}
+
+func promotionPopupPosition(layout boardLayout) (int, int) {
+	return layout.x, layout.y + 2
+}
+
+func promotionOptionAt(x, y int, layout boardLayout) (rune, bool) {
+	popupX, popupY := promotionPopupPosition(layout)
+	if y != popupY+1 {
+		return 0, false
+	}
+
+	for index, character := range []rune{'n', 'q', 'b', 'r'} {
+		start := popupX + index*4
+		if x >= start && x < start+4 {
+			return character, true
+		}
+	}
+
+	return 0, false
 }
 
 func localBoardLayout(width, height int) (boardLayout, bool) {
@@ -453,7 +543,8 @@ func localBoardLayout(width, height int) (boardLayout, bool) {
 		return boardLayout{}, false
 	}
 
-	return boardLayout{x: (width - 42) / 2, y: 2}, true
+	const panelHeight = 16
+	return boardLayout{x: (width - 42) / 2, y: (height-panelHeight)/2 + 2}, true
 }
 
 func squareAtScreenPosition(x, y int, layout boardLayout) (chess.Square, bool) {

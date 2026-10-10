@@ -5,6 +5,7 @@ import (
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	"github.com/gdamore/tcell/v2"
+	"github.com/mattn/go-runewidth"
 )
 
 type page uint8
@@ -604,12 +605,12 @@ func drawCentered(screen tcell.Screen, y int, text string, style tcell.Style) {
 		return
 	}
 
-	drawString(screen, (width-len(text))/2, y, text, style)
+	drawString(screen, (width-runewidth.StringWidth(text))/2, y, text, style)
 }
 
 func drawPaddedString(screen tcell.Screen, x, y, width int, text string, style tcell.Style) {
 	drawString(screen, x, y, "  "+text, style)
-	for column := len(text) + 2; column < width; column++ {
+	for column := runewidth.StringWidth(text) + 2; column < width; column++ {
 		screen.SetContent(x+column, y, ' ', nil, style)
 	}
 }
@@ -620,9 +621,10 @@ func drawString(screen tcell.Screen, x, y int, text string, style tcell.Style) {
 		return
 	}
 
-	for offset, character := range text {
-		if x+offset >= 0 && x+offset < width {
-			screen.SetContent(x+offset, y, character, nil, style)
+	for _, character := range text {
+		if x >= 0 && x < width {
+			screen.SetContent(x, y, character, nil, style)
 		}
+		x += runewidth.RuneWidth(character)
 	}
 }

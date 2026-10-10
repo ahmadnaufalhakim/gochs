@@ -81,11 +81,105 @@ func TestLocalGameInvalidDestinationClearsSelection(t *testing.T) {
 	}
 }
 
-func TestAdjustRGBAddsGreenWithoutOverflow(t *testing.T) {
-	got := adjustRGB(chess.RGB{R: 10, G: 240, B: 20}, 0, 31, 0)
-	if got != (chess.RGB{R: 10, G: 255, B: 20}) {
-		t.Errorf("adjustRGB() = %#v, want green capped at 255", got)
+func TestLocalGameClickingAnotherSourceChangesSelection(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("local board layout is unavailable")
 	}
+
+	game.handleMouse(tcell.NewEventMouse(layout.x+8, layout.y+6, tcell.Button1, tcell.ModNone), 80, 24)
+	game.handleMouse(tcell.NewEventMouse(layout.x+6, layout.y+6, tcell.Button1, tcell.ModNone), 80, 24)
+	if game.selectedSource == nil || *game.selectedSource != guiSquare(t, "d2") {
+		t.Errorf("selected source = %v, want d2", game.selectedSource)
+	}
+}
+
+func TestLocalGameOutsideBoardClickClearsSelection(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("local board layout is unavailable")
+	}
+
+	game.selectSource(guiSquare(t, "e2"))
+	game.handleMouse(tcell.NewEventMouse(layout.x-1, layout.y, tcell.Button1, tcell.ModNone), 80, 24)
+	if game.selectedSource != nil {
+		t.Errorf("outside click left source selected: %s", *game.selectedSource)
+	}
+}
+
+func TestBrightenRGBCapsAllChannels(t *testing.T) {
+	got := brightenRGB(chess.RGB{R: 240, G: 250, B: 20}, 31)
+	if got != (chess.RGB{R: 255, G: 255, B: 51}) {
+		t.Errorf("brightenRGB() = %#v, want capped brighter color", got)
+	}
+}
+
+func TestPromotionOptionAt(t *testing.T) {
+	layout := boardLayout{x: 10, y: 4}
+	popupX, popupY := promotionPopupPosition(layout)
+	for index, want := range []rune{'n', 'q', 'b', 'r'} {
+		got, ok := promotionOptionAt(popupX+index*4, popupY+1, layout)
+		if !ok || got != want {
+			t.Errorf("promotionOptionAt(%d, %d) = %q, %t; want %q, true", popupX+index*4, popupY+1, got, ok, want)
+		}
+	}
+
+	if _, ok := promotionOptionAt(popupX, popupY, layout); ok {
+		t.Error("promotionOptionAt accepted popup title")
+	}
+}
+
+func TestPromotionOptionLabel(t *testing.T) {
+	if got := promotionOptionLabel('n'); got != "[♞ ]" {
+		t.Errorf("promotionOptionLabel('n') = %q, want [♞ ]", got)
+	}
+}
+
+func TestSquareStyleHighlightsLegalMovesWhileInCheck(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.board.Clear()
+	game.board.SetPieceAt(guiSquare(t, "e1"), chess.Piece{Color: chess.White, Type: chess.King})
+	game.board.SetPieceAt(guiSquare(t, "a8"), chess.Piece{Color: chess.Black, Type: chess.King})
+	game.board.SetPieceAt(guiSquare(t, "e8"), chess.Piece{Color: chess.Black, Type: chess.Rook})
+	game.board.ColorToMove = chess.White
+	legalMoves := chess.GenerateLegalMoves(game.board)
+	if !game.board.IsColorInCheck(chess.White) {
+		t.Fatal("white king should be in check")
+	}
+
+	game.hoveredSquare = new(chess.Square)
+	*game.hoveredSquare = guiSquare(t, "e1")
+	_, color := squareStyle(game, guiSquare(t, "e1"), legalMoves)
+	if want := darkenRGB(chess.RGB{R: 205, G: 50, B: 50}, 71); color != want {
+		t.Errorf("hover color while checked = %#v, want %#v", color, want)
+	}
+
+	game.hoveredSquare = nil
+	game.selectSource(guiSquare(t, "e1"))
+	_, color = squareStyle(game, guiSquare(t, "d1"), legalMoves)
+	want := squareColor(game.theme, guiSquare(t, "d1"))
+	want.G = 255
+	if color != want {
+		t.Errorf("destination color while checked = %#v, want %#v", color, want)
+	}
+}
+
+func TestMoveHistoryWindowUsesFullmoves(t *testing.T) {
+	history := make([]chess.Move, 14)
+	start, end := moveHistoryWindow(history)
+	if start != 1 || end != 7 {
+		t.Errorf("moveHistoryWindow(14 moves) = %d, %d; want 1, 7", start, end)
+	}
+}
+
+func squareColor(theme chess.ColorTheme, square chess.Square) chess.RGB {
+	light, dark := theme.SquareColors()
+	if square.IsDark() {
+		return dark
+	}
+	return light
 }
 
 func TestLocalGamePromotionInput(t *testing.T) {

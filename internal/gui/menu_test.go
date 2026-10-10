@@ -47,6 +47,22 @@ func TestDrawSmallTerminalMessage(t *testing.T) {
 	}
 }
 
+func TestDrawStringUsesDisplayWidth(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(20, 1)
+
+	drawString(screen, 0, 0, "[♞ ] [♛ ]", backgroundStyle)
+	screen.Show()
+	contents, width, height := screen.GetContents()
+	if got := screenText(contents, width, height); !strings.Contains(got, "[♞ ] [♛ ]") {
+		t.Errorf("drawString() = %q, want intact chess glyph labels", got)
+	}
+}
+
 func screenText(cells []tcell.SimCell, width, height int) string {
 	var result strings.Builder
 	for y := range height {
