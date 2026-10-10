@@ -180,8 +180,87 @@ func TestSquareStyleHighlightsLegalMovesWhileInCheck(t *testing.T) {
 func TestMoveHistoryWindowUsesFullmoves(t *testing.T) {
 	history := make([]string, 14)
 	start, end := moveHistoryWindow(history)
-	if start != 1 || end != 7 {
-		t.Errorf("moveHistoryWindow(14 moves) = %d, %d; want 1, 7", start, end)
+	if start != 3 || end != 7 {
+		t.Errorf("moveHistoryWindow(14 moves) = %d, %d; want 3, 7", start, end)
+	}
+}
+
+func TestResignationConfirmationAndCancellation(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("local board layout is unavailable")
+	}
+	buttonX, buttonY := resignButtonPosition(layout)
+
+	game.handleMouse(tcell.NewEventMouse(buttonX, buttonY, tcell.Button1, tcell.ModNone), 80, 24)
+	if !game.resignPending || game.resignedBy != nil {
+		t.Errorf("first resign click = pending %t, resigned %v; want pending confirmation", game.resignPending, game.resignedBy)
+	}
+	game.handleKey(tcell.NewEventKey(tcell.KeyEsc, 0, tcell.ModNone), 80, 24)
+	if game.resignPending {
+		t.Error("Escape did not cancel resignation confirmation")
+	}
+
+	game.handleMouse(tcell.NewEventMouse(buttonX, buttonY, tcell.Button1, tcell.ModNone), 80, 24)
+	game.handleMouse(tcell.NewEventMouse(layout.x, layout.y, tcell.Button1, tcell.ModNone), 80, 24)
+	if game.resignPending {
+		t.Error("outside click did not cancel resignation confirmation")
+	}
+}
+
+func TestResignationEndsLocalGame(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("local board layout is unavailable")
+	}
+	buttonX, buttonY := resignButtonPosition(layout)
+	game.handleMouse(tcell.NewEventMouse(buttonX, buttonY, tcell.Button1, tcell.ModNone), 80, 24)
+	game.handleMouse(tcell.NewEventMouse(buttonX, buttonY, tcell.Button1, tcell.ModNone), 80, 24)
+
+	if game.resignedBy == nil || *game.resignedBy != chess.White {
+		t.Errorf("resignedBy = %v, want White", game.resignedBy)
+	}
+	if got := gameTitle(game); got != "White resigned · Black wins" {
+		t.Errorf("gameTitle() = %q, want resignation result", got)
+	}
+
+	game.uciInput = "e2e4"
+	game.submitUCI()
+	game.handleMouse(tcell.NewEventMouse(layout.x+8, layout.y+6, tcell.Button1, tcell.ModNone), 80, 24)
+	if game.board.PieceAt(guiSquare(t, "e2")) != (chess.Piece{Color: chess.White, Type: chess.Pawn}) {
+		t.Error("resigned game accepted a move")
+	}
+	if len(game.history) != 0 {
+		t.Errorf("resigned game recorded history: %v", game.history)
+	}
+}
+
+func TestResignButtonLabel(t *testing.T) {
+	if got := resignButtonLabel(false); got != "[🏳️ ] Resign" {
+		t.Errorf("resignButtonLabel(false) = %q", got)
+	}
+	if got := resignButtonLabel(true); got != "[🏳️ ] Are you sure?" {
+		t.Errorf("resignButtonLabel(true) = %q", got)
+	}
+}
+
+func TestResignButtonHover(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("local board layout is unavailable")
+	}
+	buttonX, buttonY := resignButtonPosition(layout)
+
+	game.handleMouse(tcell.NewEventMouse(buttonX, buttonY, tcell.ButtonNone, tcell.ModNone), 80, 24)
+	if !game.hoveredResign {
+		t.Error("hovering resign button did not set hoveredResign")
+	}
+	game.handleMouse(tcell.NewEventMouse(layout.x, layout.y, tcell.ButtonNone, tcell.ModNone), 80, 24)
+	if game.hoveredResign {
+		t.Error("moving away from resign button did not clear hoveredResign")
 	}
 }
 

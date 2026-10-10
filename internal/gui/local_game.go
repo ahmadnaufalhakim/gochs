@@ -7,6 +7,7 @@ import (
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	"github.com/gdamore/tcell/v2"
+	"github.com/mattn/go-runewidth"
 )
 
 const squareWidth = 2
@@ -23,6 +24,9 @@ type localGameState struct {
 	history          []string
 	lastMove         chess.Move
 	hasLastMove      bool
+	resignPending    bool
+	hoveredResign    bool
+	resignedBy       *chess.PieceColor
 }
 
 type boardLayout struct {
@@ -44,6 +48,9 @@ func (g *localGameState) handleKey(event *tcell.EventKey, width, height int) boo
 	if _, ok := localBoardLayout(width, height); !ok {
 		return event.Key() == tcell.KeyEsc
 	}
+	if g.hasResigned() {
+		return event.Key() == tcell.KeyEsc
+	}
 
 	if len(g.promotionChoices) != 0 {
 		switch event.Key() {
@@ -60,6 +67,10 @@ func (g *localGameState) handleKey(event *tcell.EventKey, width, height int) boo
 
 	switch event.Key() {
 	case tcell.KeyEsc:
+		if g.resignPending {
+			g.resignPending = false
+			return false
+		}
 		if g.uciInput != "" {
 			g.uciInput = ""
 			return false
@@ -93,6 +104,15 @@ func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int)
 	if !ok {
 		return
 	}
+	if g.hasResigned() {
+		return
+	}
+	if event.Buttons() == tcell.ButtonNone {
+		g.hoveredResign = g.resignButtonAt(x, y, layout)
+		if g.hoveredResign {
+			return
+		}
+	}
 
 	if len(g.promotionChoices) != 0 {
 		character, ok := g.promotionOptionAt(x, y, layout)
@@ -109,6 +129,25 @@ func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int)
 			}
 		}
 		return
+	}
+	if event.Buttons() == tcell.Button1 {
+		if g.resignButtonAt(x, y, layout) {
+			g.hoveredResign = true
+			if g.resignPending {
+				g.resign()
+			} else {
+				g.resignPending = true
+				g.selectedSource = nil
+				g.hoveredSquare = nil
+			}
+			return
+		}
+		if g.resignPending {
+			g.resignPending = false
+			g.hoveredResign = false
+			return
+		}
+		g.hoveredResign = false
 	}
 
 	square, ok := squareAtScreenPosition(x, y, layout)
@@ -155,6 +194,9 @@ func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int)
 }
 
 func (g *localGameState) submitUCI() {
+	if g.hasResigned() {
+		return
+	}
 	uci := g.uciInput
 	if len(uci) != 4 && len(uci) != 5 {
 		g.message = "Enter UCI like e2e4 or e7e8q"
@@ -207,6 +249,10 @@ func (g *localGameState) selectSource(square chess.Square) {
 }
 
 func (g *localGameState) updateHover(square chess.Square) {
+	if g.hasResigned() {
+		g.hoveredSquare = nil
+		return
+	}
 	legalMoves := chess.GenerateLegalMoves(g.board)
 	if g.isSelectableSource(square, legalMoves) {
 		g.hoveredSquare = new(chess.Square)
@@ -281,6 +327,9 @@ func promotionMoveForRune(candidates []chess.Move, character rune) (chess.Move, 
 }
 
 func (g *localGameState) makeMove(move chess.Move) {
+	if g.hasResigned() {
+		return
+	}
 	san, err := g.board.SAN(move)
 	if err != nil {
 		g.message = err.Error()
@@ -302,6 +351,23 @@ func (g *localGameState) makeMove(move chess.Move) {
 	g.message = ""
 }
 
+func (g *localGameState) resign() {
+	resigningColor := g.board.ColorToMove
+	g.resignedBy = &resigningColor
+	g.resignPending = false
+	g.hoveredResign = false
+	g.selectedSource = nil
+	g.hoveredSquare = nil
+	g.promotionChoices = nil
+	g.hoveredPromotion = 0
+	g.uciInput = ""
+	g.message = ""
+}
+
+func (g localGameState) hasResigned() bool {
+	return g.resignedBy != nil
+}
+
 func drawLocalGame(screen tcell.Screen, game localGameState) {
 	width, height := screen.Size()
 	layout, ok := localBoardLayout(width, height)
@@ -320,10 +386,13 @@ func drawLocalGame(screen tcell.Screen, game localGameState) {
 }
 
 func gameTitle(game localGameState) string {
+	if game.resignedBy != nil {
+		return fmt.Sprintf("%s resigned · %s wins", *game.resignedBy, game.resignedBy.Opponent())
+	}
 	legalMoves := chess.GenerateLegalMoves(game.board)
 	if len(legalMoves) == 0 {
 		if game.board.IsColorInCheck(game.board.ColorToMove) {
-			return fmt.Sprintf("Checkmate. %s wins", game.board.ColorToMove.Opponent())
+			return fmt.Sprintf("Checkmate · %s wins", game.board.ColorToMove.Opponent())
 		}
 		return "Stalemate"
 	}
@@ -336,7 +405,10 @@ func gameTitle(game localGameState) string {
 
 func drawBoard(screen tcell.Screen, game localGameState, layout boardLayout) {
 	renderer := chess.Renderer{Perspective: chess.White}
-	legalMoves := chess.GenerateLegalMoves(game.board)
+	var legalMoves []chess.Move
+	if !game.hasResigned() {
+		legalMoves = chess.GenerateLegalMoves(game.board)
+	}
 	for row := range 8 {
 		square := renderer.SquareAt(row, 0)
 		drawString(screen, layout.x-2, layout.y+row, fmt.Sprintf("%d", square.Rank()+1), mutedStyle)
@@ -472,15 +544,50 @@ func drawMoveHistory(screen tcell.Screen, game localGameState, layout boardLayou
 		}
 		drawString(screen, x, row, line, backgroundStyle)
 	}
+	if !game.hasResigned() {
+		drawResignButton(screen, game, layout)
+	}
 }
 
 func moveHistoryWindow(history []string) (start, end int) {
 	end = (len(history) + 1) / 2
-	return max(0, end-6), end
+	return max(0, end-4), end
+}
+
+func drawResignButton(screen tcell.Screen, game localGameState, layout boardLayout) {
+	x, y := resignButtonPosition(layout)
+	label := resignButtonLabel(game.resignPending)
+	style := backgroundStyle
+	if game.hoveredResign && game.resignPending {
+		style = backgroundStyle.Background(tcell.NewRGBColor(130, 50, 50)).Foreground(tcell.NewRGBColor(255, 230, 211)).Bold(true)
+	} else if game.hoveredResign {
+		style = selectedStyle
+	}
+	drawString(screen, x, y, label, style)
+}
+
+func resignButtonPosition(layout boardLayout) (int, int) {
+	return layout.x + 20, layout.y + 7
+}
+
+func resignButtonLabel(pending bool) string {
+	if pending {
+		return "[🏳️ ] Are you sure?"
+	}
+	return "[🏳️ ] Resign"
+}
+
+func (g localGameState) resignButtonAt(x, y int, layout boardLayout) bool {
+	buttonX, buttonY := resignButtonPosition(layout)
+	return y == buttonY && x >= buttonX && x < buttonX+runewidth.StringWidth(resignButtonLabel(g.resignPending))
 }
 
 func drawGameInput(screen tcell.Screen, game localGameState, layout boardLayout) {
 	y := layout.y + 10
+	if game.hasResigned() {
+		drawString(screen, layout.x-2, y+3, "Esc: return to menu", mutedStyle)
+		return
+	}
 	drawString(screen, layout.x-2, y, "Your move (UCI): "+game.uciInput+"_", backgroundStyle)
 	if game.message != "" {
 		drawString(screen, layout.x-2, y+1, game.message, mutedStyle)
