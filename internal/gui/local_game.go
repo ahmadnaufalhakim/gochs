@@ -29,6 +29,10 @@ type localGameState struct {
 	uciInput         string
 	message          string
 	history          []string
+	moves            []chess.Move
+	positions        []chess.Board
+	viewPly          int
+	historyScroll    int
 	lastMove         chess.Move
 	hasLastMove      bool
 	positionCounts   map[uint64]uint
@@ -54,6 +58,7 @@ func newLocalGameState(theme chess.ColorTheme) localGameState {
 		theme:          theme,
 		perspective:    chess.White,
 		positionCounts: map[uint64]uint{board.PositionKey(): 1},
+		positions:      []chess.Board{board},
 	}
 }
 
@@ -118,6 +123,7 @@ func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int)
 		return
 	}
 	if g.hasTerminalResult() {
+		g.handleReviewMouse(event, layout)
 		return
 	}
 	if event.Buttons() == tcell.ButtonNone {
@@ -366,6 +372,9 @@ func (g *localGameState) makeMove(move chess.Move) {
 	}
 
 	g.history = append(g.history, san)
+	g.moves = append(g.moves, move)
+	g.positions = append(g.positions, g.board)
+	g.viewPly = len(g.moves)
 	g.lastMove = move
 	g.hasLastMove = true
 	g.selectedSource = nil
@@ -376,6 +385,9 @@ func (g *localGameState) makeMove(move chess.Move) {
 	g.message = ""
 	g.recordPosition()
 	g.updateTerminalResult()
+	if g.hasTerminalResult() {
+		g.syncHistoryToView(1)
+	}
 	if g.autoFlip {
 		g.perspective = g.board.ColorToMove
 	}
@@ -386,6 +398,20 @@ func (g *localGameState) flipBoard() {
 	g.selectedSource = nil
 	g.hoveredSquare = nil
 	g.hoveredFlip = true
+}
+
+func (g localGameState) boardForDisplay() chess.Board {
+	if g.hasTerminalResult() && g.viewPly >= 0 && g.viewPly < len(g.positions) {
+		return g.positions[g.viewPly]
+	}
+	return g.board
+}
+
+func (g localGameState) viewedMove() (chess.Move, bool) {
+	if g.hasTerminalResult() && g.viewPly > 0 && g.viewPly <= len(g.moves) {
+		return g.moves[g.viewPly-1], true
+	}
+	return g.lastMove, g.hasLastMove
 }
 
 func (g *localGameState) recordPosition() {
@@ -443,6 +469,99 @@ func (g localGameState) hasTerminalResult() bool {
 	return g.hasResigned() || g.terminalTitle != ""
 }
 
+func (g *localGameState) handleReviewMouse(event *tcell.EventMouse, layout boardLayout) {
+	x, y := event.Position()
+	buttons := event.Buttons()
+	if buttons == tcell.ButtonNone {
+		g.hoveredFlip = flipButtonAt(x, y, layout)
+		return
+	}
+	if buttons == tcell.Button1 {
+		if flipButtonAt(x, y, layout) {
+			g.flipBoard()
+			return
+		}
+		if ply, ok := g.historyPlyAt(x, y, layout); ok {
+			g.viewPly = ply
+			g.syncHistoryToView(0)
+		}
+		return
+	}
+	if buttons&tcell.WheelUp != 0 || buttons&tcell.WheelDown != 0 {
+		if _, ok := squareAtScreenPosition(x, y, layout, g.perspective); ok {
+			direction := 1
+			if buttons&tcell.WheelUp != 0 {
+				direction = -1
+			}
+			g.moveReplay(direction)
+			return
+		}
+		if historyAreaAt(x, y, layout) {
+			if buttons&tcell.WheelUp != 0 {
+				g.historyScroll = max(0, g.historyScroll-1)
+			} else {
+				g.historyScroll = min(g.historyMaxScroll(), g.historyScroll+1)
+			}
+		}
+	}
+}
+
+func (g *localGameState) moveReplay(direction int) {
+	viewPly := min(max(0, g.viewPly+direction), len(g.moves))
+	if viewPly == g.viewPly {
+		return
+	}
+	g.viewPly = viewPly
+	g.syncHistoryToView(direction)
+}
+
+func (g *localGameState) syncHistoryToView(direction int) {
+	if g.viewPly == 0 {
+		g.historyScroll = 0
+		return
+	}
+	targetRow := (g.viewPly - 1) / 2
+	anchorRow := 1
+	if direction > 0 {
+		anchorRow = 2
+	}
+	g.historyScroll = min(max(0, targetRow-anchorRow), g.historyMaxScroll())
+}
+
+func (g localGameState) historyMaxScroll() int {
+	fullmoves := (len(g.history) + 1) / 2
+	return max(0, fullmoves-4)
+}
+
+func (g localGameState) historyPlyAt(x, y int, layout boardLayout) (int, bool) {
+	if !historyAreaAt(x, y, layout) {
+		return 0, false
+	}
+	row := y - (layout.y + 2)
+	index := (g.historyScroll + row) * 2
+	if x < layout.x+20+moveNumberWidth+2 {
+		return 0, false
+	}
+	if x < layout.x+20+moveNumberWidth+2+sanWidth {
+		if index < len(g.history) {
+			return index + 1, true
+		}
+		return 0, false
+	}
+	if x < layout.x+20+moveNumberWidth+2+sanWidth+2 {
+		return 0, false
+	}
+	if index+1 < len(g.history) {
+		return index + 2, true
+	}
+	return 0, false
+}
+
+func historyAreaAt(x, y int, layout boardLayout) bool {
+	startX := layout.x + 20
+	return x >= startX && x < startX+moveHistoryRowWidth && y >= layout.y+2 && y < layout.y+6
+}
+
 func drawLocalGame(screen tcell.Screen, game localGameState) {
 	width, height := screen.Size()
 	layout, ok := localBoardLayout(width, height)
@@ -462,9 +581,15 @@ func drawLocalGame(screen tcell.Screen, game localGameState) {
 
 func gameTitle(game localGameState) string {
 	if game.resignedBy != nil {
+		if game.viewPly != len(game.moves) {
+			return game.viewingTitle()
+		}
 		return fmt.Sprintf("%s resigned · %s wins %s", *game.resignedBy, game.resignedBy.Opponent(), game.resignedBy.EndResult())
 	}
 	if game.terminalTitle != "" {
+		if game.viewPly != len(game.moves) {
+			return game.viewingTitle()
+		}
 		return game.terminalTitle
 	}
 	legalMoves := chess.GenerateLegalMoves(game.board)
@@ -482,19 +607,32 @@ func gameTitle(game localGameState) string {
 	return fmt.Sprintf("%s to move", game.board.ColorToMove)
 }
 
+func (g localGameState) viewingTitle() string {
+	if g.viewPly == 0 {
+		return "Viewing starting position"
+	}
+	san := g.history[g.viewPly-1]
+	fullmove := (g.viewPly + 1) / 2
+	if g.viewPly%2 == 0 {
+		return fmt.Sprintf("Viewing %d... %s", fullmove, san)
+	}
+	return fmt.Sprintf("Viewing %d. %s", fullmove, san)
+}
+
 func drawBoard(screen tcell.Screen, game localGameState, layout boardLayout) {
 	renderer := chess.Renderer{Perspective: game.perspective}
+	board := game.boardForDisplay()
 	var legalMoves []chess.Move
 	if !game.hasTerminalResult() {
-		legalMoves = chess.GenerateLegalMoves(game.board)
+		legalMoves = chess.GenerateLegalMoves(board)
 	}
 	for row := range 8 {
 		square := renderer.SquareAt(row, 0)
 		drawString(screen, layout.x-2, layout.y+row, fmt.Sprintf("%d", square.Rank()+1), mutedStyle)
 		for column := range 8 {
 			square := renderer.SquareAt(row, column)
-			style, color := squareStyle(game, square, legalMoves)
-			piece := game.board.PieceAt(square)
+			style, color := squareStyle(game, board, square, legalMoves)
+			piece := board.PieceAt(square)
 			drawPiece(screen, layout.x+column*squareWidth, layout.y+row, piece, style, color)
 		}
 	}
@@ -505,7 +643,7 @@ func drawBoard(screen tcell.Screen, game localGameState, layout boardLayout) {
 	}
 }
 
-func squareStyle(game localGameState, square chess.Square, legalMoves []chess.Move) (tcell.Style, chess.RGB) {
+func squareStyle(game localGameState, board chess.Board, square chess.Square, legalMoves []chess.Move) (tcell.Style, chess.RGB) {
 	light, dark := game.theme.SquareColors()
 	color := light
 	if square.IsDark() {
@@ -513,8 +651,8 @@ func squareStyle(game localGameState, square chess.Square, legalMoves []chess.Mo
 	}
 
 	kingInCheck := false
-	if king, ok := game.board.Pieces[game.board.ColorToMove][chess.King].SingleSquare(); ok {
-		kingInCheck = game.board.IsColorInCheck(game.board.ColorToMove) && king == square
+	if king, ok := board.Pieces[board.ColorToMove][chess.King].SingleSquare(); ok {
+		kingInCheck = board.IsColorInCheck(board.ColorToMove) && king == square
 	}
 
 	if kingInCheck {
@@ -526,7 +664,7 @@ func squareStyle(game localGameState, square chess.Square, legalMoves []chess.Mo
 		color.G = 255
 	} else if game.hoveredSquare != nil && *game.hoveredSquare == square {
 		color = darkenRGB(color, 71)
-	} else if game.hasLastMove && (game.lastMove.From() == square || game.lastMove.To() == square) {
+	} else if lastMove, ok := game.viewedMove(); ok && (lastMove.From() == square || lastMove.To() == square) {
 		color = brightenRGB(color, 31)
 	}
 
@@ -613,21 +751,41 @@ func drawMoveHistory(screen tcell.Screen, game localGameState, layout boardLayou
 
 	drawString(screen, x, layout.y-2, gameTitle(game), titleStyle)
 	drawString(screen, x, layout.y, "Moves", titleStyle)
-	start, fullmoves := moveHistoryWindow(game.history)
-	for fullmove := start; fullmove < fullmoves; fullmove++ {
+	start := game.historyScroll
+	if !game.hasTerminalResult() {
+		start, _ = moveHistoryWindow(game.history)
+	}
+	for row := range 4 {
+		fullmove := start + row
 		index := fullmove * 2
-		row := layout.y + 2 + fullmove - start
+		if index >= len(game.history) {
+			break
+		}
 		blackMove := ""
 		if index+1 < len(game.history) {
 			blackMove = game.history[index+1]
 		}
-		line := formatMoveHistoryRow(fullmove+1, game.history[index], blackMove)
-		drawString(screen, x, row, line, backgroundStyle)
+		drawMoveHistoryRow(screen, x, layout.y+2+row, fullmove+1, game, index, blackMove)
 	}
 	if !game.hasTerminalResult() {
 		drawResignButton(screen, game, layout)
-		drawFlipButton(screen, game, layout)
 	}
+	drawFlipButton(screen, game, layout)
+}
+
+func drawMoveHistoryRow(screen tcell.Screen, x, y, fullmove int, game localGameState, index int, blackMove string) {
+	drawString(screen, x, y, fmt.Sprintf("%*d. ", moveNumberWidth, fullmove), backgroundStyle)
+	whiteStyle := backgroundStyle
+	blackStyle := backgroundStyle
+	if game.hasTerminalResult() && game.viewPly == index+1 {
+		whiteStyle = selectedStyle
+	}
+	if game.hasTerminalResult() && game.viewPly == index+2 {
+		blackStyle = selectedStyle
+	}
+	drawString(screen, x+moveNumberWidth+2, y, fmt.Sprintf("%-*s", sanWidth, game.history[index]), whiteStyle)
+	drawString(screen, x+moveNumberWidth+2+sanWidth, y, "  ", backgroundStyle)
+	drawString(screen, x+moveNumberWidth+2+sanWidth+2, y, fmt.Sprintf("%-*s", sanWidth, blackMove), blackStyle)
 }
 
 func formatMoveHistoryRow(fullmove int, whiteMove, blackMove string) string {

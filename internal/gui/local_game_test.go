@@ -200,14 +200,14 @@ func TestSquareStyleHighlightsLegalMovesWhileInCheck(t *testing.T) {
 
 	game.hoveredSquare = new(chess.Square)
 	*game.hoveredSquare = guiSquare(t, "e1")
-	_, color := squareStyle(game, guiSquare(t, "e1"), legalMoves)
+	_, color := squareStyle(game, game.board, guiSquare(t, "e1"), legalMoves)
 	if want := darkenRGB(chess.RGB{R: 205, G: 50, B: 50}, 71); color != want {
 		t.Errorf("hover color while checked = %#v, want %#v", color, want)
 	}
 
 	game.hoveredSquare = nil
 	game.selectSource(guiSquare(t, "e1"))
-	_, color = squareStyle(game, guiSquare(t, "d1"), legalMoves)
+	_, color = squareStyle(game, game.board, guiSquare(t, "d1"), legalMoves)
 	want := squareColor(game.theme, guiSquare(t, "d1"))
 	want.G = 255
 	if color != want {
@@ -425,6 +425,87 @@ func TestLocalGameCheckmateAndStalemateAreTerminal(t *testing.T) {
 		assertTerminalGameBlocksInput(t, &game)
 		assertTerminalControlsHidden(t, game)
 	})
+}
+
+func TestTerminalReplayNavigation(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	for _, uci := range []string{"f2f3", "e7e5", "g2g4", "d8h4"} {
+		game.uciInput = uci
+		game.submitUCI()
+	}
+	if len(game.positions) != 5 || game.viewPly != 4 {
+		t.Fatalf("replay snapshots = %d at ply %d, want 5 at ply 4", len(game.positions), game.viewPly)
+	}
+
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("local board layout is unavailable")
+	}
+	game.handleMouse(tcell.NewEventMouse(layout.x, layout.y, tcell.WheelUp, tcell.ModNone), 80, 24)
+	if game.viewPly != 3 {
+		t.Errorf("viewPly after board wheel up = %d, want 3", game.viewPly)
+	}
+	board := game.boardForDisplay()
+	if got := board.PieceAt(guiSquare(t, "g4")); got != (chess.Piece{Color: chess.White, Type: chess.Pawn}) {
+		t.Errorf("replay board piece at g4 = %#v, want white pawn", got)
+	}
+	if got := gameTitle(game); got != "Viewing 2. g4" {
+		t.Errorf("gameTitle() = %q, want viewing title", got)
+	}
+
+	historyX := layout.x + 20
+	game.handleMouse(tcell.NewEventMouse(historyX+moveNumberWidth+2, layout.y+2, tcell.Button1, tcell.ModNone), 80, 24)
+	if game.viewPly != 1 {
+		t.Errorf("White SAN click selected ply %d, want 1", game.viewPly)
+	}
+	game.handleMouse(tcell.NewEventMouse(historyX+moveNumberWidth+2+sanWidth+2, layout.y+2, tcell.Button1, tcell.ModNone), 80, 24)
+	if game.viewPly != 2 {
+		t.Errorf("Black SAN click selected ply %d, want 2", game.viewPly)
+	}
+}
+
+func TestReplayHistoryViewportAnchoring(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.terminalTitle = "Stalemate · ½-½"
+	game.history = make([]string, 20)
+	game.moves = make([]chess.Move, 20)
+	game.positions = make([]chess.Board, 21)
+
+	game.viewPly = 12
+	game.moveReplay(-1)
+	if game.viewPly != 11 || game.historyScroll != 4 {
+		t.Errorf("backward replay = ply %d, scroll %d; want ply 11, scroll 4", game.viewPly, game.historyScroll)
+	}
+	game.moveReplay(1)
+	if game.viewPly != 12 || game.historyScroll != 3 {
+		t.Errorf("forward replay = ply %d, scroll %d; want ply 12, scroll 3", game.viewPly, game.historyScroll)
+	}
+	game.viewPly = 1
+	game.syncHistoryToView(-1)
+	if game.historyScroll != 0 {
+		t.Errorf("first move history scroll = %d, want 0", game.historyScroll)
+	}
+	game.viewPly = len(game.moves)
+	game.syncHistoryToView(1)
+	if game.historyScroll != game.historyMaxScroll() {
+		t.Errorf("final move history scroll = %d, want %d", game.historyScroll, game.historyMaxScroll())
+	}
+
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("local board layout is unavailable")
+	}
+	game.viewPly = 12
+	game.historyScroll = 3
+	viewPly := game.viewPly
+	historyX := layout.x + 20
+	game.handleMouse(tcell.NewEventMouse(historyX, layout.y+2, tcell.WheelDown, tcell.ModNone), 80, 24)
+	if game.viewPly != viewPly {
+		t.Errorf("history wheel changed view ply to %d, want %d", game.viewPly, viewPly)
+	}
+	if game.historyScroll != 4 {
+		t.Errorf("history wheel scroll = %d, want 4", game.historyScroll)
+	}
 }
 
 func assertTerminalGameBlocksInput(t *testing.T, game *localGameState) {
