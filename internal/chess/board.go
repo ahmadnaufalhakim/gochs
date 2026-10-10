@@ -507,6 +507,9 @@ func (b *Board) applyMove(m Move) {
 	}
 
 	b.ColorToMove = b.ColorToMove.Opponent()
+	if m.Flag() == DoublePawnPush && !b.hasLegalEnPassantCapture() {
+		b.EnPassantTarget = 0
+	}
 
 	if isPawnMove || isCaptureMove {
 		b.HalfmoveClock = 0
@@ -517,6 +520,34 @@ func (b *Board) applyMove(m Move) {
 	if movingPiece.Color == Black {
 		b.FullmoveNumber++
 	}
+}
+
+func (b Board) hasLegalEnPassantCapture() bool {
+	target, ok := b.EnPassantTarget.SingleSquare()
+	if !ok {
+		return false
+	}
+
+	color := b.ColorToMove
+	for _, delta := range pawnAttackMoveDeltas[color] {
+		fromFile := int8(target.File()) - delta.File
+		fromRank := int8(target.Rank()) - delta.Rank
+		if fromFile < 0 || fromFile > 7 || fromRank < 0 || fromRank > 7 {
+			continue
+		}
+		from := Square(fromFile + fromRank*8)
+		if b.Pieces[color][Pawn]&from.Mask() == 0 {
+			continue
+		}
+
+		next := b
+		next.applyMove(NewMove(from, target, EnPassant))
+		if !next.IsColorInCheck(color) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (b *Board) MakeMove(m Move) error {
