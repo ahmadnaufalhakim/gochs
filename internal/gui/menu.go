@@ -10,6 +10,7 @@ type page uint8
 
 const (
 	mainMenu page = iota
+	playMenu
 	comingSoon
 	exitConfirmation
 )
@@ -17,7 +18,7 @@ const (
 type menuItem uint8
 
 const (
-	playWithStockfish menuItem = iota
+	play menuItem = iota
 	puzzle
 	options
 	credits
@@ -26,19 +27,36 @@ const (
 )
 
 var menuLabels = [menuItemCount]string{
-	"Play with Stockfish",
+	"Play",
 	"Puzzle",
 	"Options",
 	"Credits",
 	"Exit",
 }
 
+type playMenuItem uint8
+
+const (
+	localGame playMenuItem = iota
+	playWithStockfish
+	back
+	playMenuItemCount
+)
+
+var playMenuLabels = [playMenuItemCount]string{
+	"Local game",
+	"Play with Stockfish",
+	"Back",
+}
+
 type menuState struct {
 	page            page
 	selected        menuItem
-	unavailableItem menuItem
+	playSelected    playMenuItem
+	comingSoonLabel string
 	confirmExit     bool
 	splashIndex     int
+	result          Result
 }
 
 type menuLayout struct {
@@ -137,6 +155,20 @@ func (s *menuState) handleKey(event *tcell.EventKey) bool {
 		case tcell.KeyEsc:
 			s.activate(exit)
 		}
+	case playMenu:
+		switch event.Key() {
+		case tcell.KeyUp:
+			s.movePlaySelection(-1)
+		case tcell.KeyDown:
+			s.movePlaySelection(1)
+		case tcell.KeyEnter:
+			s.activatePlayItem(s.playSelected)
+			if s.result == LocalGame {
+				return true
+			}
+		case tcell.KeyEsc:
+			s.showMainMenu()
+		}
 	case comingSoon:
 		switch event.Key() {
 		case tcell.KeyEnter, tcell.KeyEsc:
@@ -154,12 +186,14 @@ func (s *menuState) handleKey(event *tcell.EventKey) bool {
 			s.showMainMenu()
 		case tcell.KeyEnter:
 			if s.confirmExit {
+				s.result = Exit
 				return true
 			}
 			s.showMainMenu()
 		case tcell.KeyRune:
 			switch event.Rune() {
 			case 'y', 'Y':
+				s.result = Exit
 				return true
 			case 'n', 'N', 'q':
 				s.showMainMenu()
@@ -181,6 +215,17 @@ func (s *menuState) handleMouse(event *tcell.EventMouse, width, height int) bool
 				s.activate(item)
 			}
 		}
+	case playMenu:
+		item, ok := playMenuItemAt(x, y, width, height)
+		if ok {
+			s.playSelected = item
+			if event.Buttons() == tcell.Button1 {
+				s.activatePlayItem(item)
+				if s.result == LocalGame {
+					return true
+				}
+			}
+		}
 	case comingSoon:
 		if event.Buttons() == tcell.Button1 {
 			s.showMainMenu()
@@ -197,6 +242,7 @@ func (s *menuState) handleMouse(event *tcell.EventMouse, width, height int) bool
 		s.confirmExit = choice
 		if event.Buttons() == tcell.Button1 {
 			if choice {
+				s.result = Exit
 				return true
 			}
 			s.showMainMenu()
@@ -214,7 +260,16 @@ func (s *menuState) moveSelection(delta int) {
 	s.selected = menuItem((int(s.selected) + delta + int(menuItemCount)) % int(menuItemCount))
 }
 
+func (s *menuState) movePlaySelection(delta int) {
+	s.playSelected = playMenuItem((int(s.playSelected) + delta + int(playMenuItemCount)) % int(playMenuItemCount))
+}
+
 func (s *menuState) activate(item menuItem) {
+	if item == play {
+		s.page = playMenu
+		s.playSelected = localGame
+		return
+	}
 	if item == exit {
 		s.page = exitConfirmation
 		s.confirmExit = false
@@ -222,7 +277,19 @@ func (s *menuState) activate(item menuItem) {
 	}
 
 	s.page = comingSoon
-	s.unavailableItem = item
+	s.comingSoonLabel = menuLabels[item]
+}
+
+func (s *menuState) activatePlayItem(item playMenuItem) {
+	switch item {
+	case localGame:
+		s.result = LocalGame
+	case playWithStockfish:
+		s.page = comingSoon
+		s.comingSoonLabel = playMenuLabels[item]
+	case back:
+		s.showMainMenu()
+	}
 }
 
 func (s *menuState) showMainMenu() {
@@ -241,8 +308,10 @@ func draw(screen tcell.Screen, state menuState) {
 	switch state.page {
 	case mainMenu:
 		drawMainMenu(screen, state)
+	case playMenu:
+		drawPlayMenu(screen, state.playSelected)
 	case comingSoon:
-		drawComingSoon(screen, state.unavailableItem)
+		drawComingSoon(screen, state.comingSoonLabel)
 	case exitConfirmation:
 		drawExitConfirmation(screen, state.confirmExit)
 	}
@@ -276,9 +345,24 @@ func drawSplash(screen tcell.Screen, y int, splash []string) {
 	}
 }
 
-func drawComingSoon(screen tcell.Screen, item menuItem) {
+func drawPlayMenu(screen tcell.Screen, selected playMenuItem) {
+	width, height := screen.Size()
+	layout := simpleMenuLayout(width, height, playMenuLabels[:])
+
+	drawCentered(screen, layout.y-3, "Play", titleStyle)
+	for item, label := range playMenuLabels {
+		style := backgroundStyle
+		if playMenuItem(item) == selected {
+			style = selectedStyle
+		}
+		drawPaddedString(screen, layout.x, layout.y+item, layout.width, label, style)
+	}
+	drawCentered(screen, layout.y+int(playMenuItemCount)+1, "Up/Down to select  Enter to choose", mutedStyle)
+}
+
+func drawComingSoon(screen tcell.Screen, label string) {
 	_, height := screen.Size()
-	drawCentered(screen, height/2-2, menuLabels[item], titleStyle)
+	drawCentered(screen, height/2-2, label, titleStyle)
 	drawCentered(screen, height/2, "Coming soon", backgroundStyle)
 	drawCentered(screen, height/2+2, "Press Enter, Esc, or click to return", mutedStyle)
 }
@@ -301,8 +385,20 @@ func styleForExitChoice(choice, confirmExit bool) tcell.Style {
 }
 
 func mainMenuLayout(width, height, splashHeight int) menuLayout {
+	return simpleMenuLayoutAt(
+		width,
+		(height-splashHeight-int(menuItemCount)-2)/2+splashHeight+1,
+		menuLabels[:],
+	)
+}
+
+func simpleMenuLayout(width, height int, labels []string) menuLayout {
+	return simpleMenuLayoutAt(width, (height-len(labels))/2, labels)
+}
+
+func simpleMenuLayoutAt(width, y int, labels []string) menuLayout {
 	menuWidth := 0
-	for _, label := range menuLabels {
+	for _, label := range labels {
 		if len(label) > menuWidth {
 			menuWidth = len(label)
 		}
@@ -310,7 +406,7 @@ func mainMenuLayout(width, height, splashHeight int) menuLayout {
 
 	return menuLayout{
 		x:     (width - menuWidth - 4) / 2,
-		y:     (height-splashHeight-int(menuItemCount)-2)/2 + splashHeight + 1,
+		y:     y,
 		width: menuWidth + 4,
 	}
 }
@@ -322,6 +418,21 @@ func menuItemAt(x, y, width, height, splashHeight int) (menuItem, bool) {
 	}
 
 	for item := range menuItemCount {
+		if y == layout.y+int(item) {
+			return item, true
+		}
+	}
+
+	return 0, false
+}
+
+func playMenuItemAt(x, y, width, height int) (playMenuItem, bool) {
+	layout := simpleMenuLayout(width, height, playMenuLabels[:])
+	if x < layout.x || x >= layout.x+layout.width {
+		return 0, false
+	}
+
+	for item := range playMenuItemCount {
 		if y == layout.y+int(item) {
 			return item, true
 		}

@@ -23,7 +23,7 @@ func TestDrawMainMenu(t *testing.T) {
 	screen.Show()
 	contents, width, height := screen.GetContents()
 	text := screenText(contents, width, height)
-	for _, want := range []string{"___| |__  ___", "<~~~~>", "Play with Stockfish", "Puzzle", "Options", "Credits", "Exit"} {
+	for _, want := range []string{"___| |__  ___", "<~~~~>", "Play", "Puzzle", "Options", "Credits", "Exit"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("menu rendering does not contain %q", want)
 		}
@@ -59,7 +59,7 @@ func screenText(cells []tcell.SimCell, width, height int) string {
 }
 
 func TestMenuSelectionWraps(t *testing.T) {
-	state := menuState{selected: playWithStockfish}
+	state := menuState{selected: play}
 
 	state.handleKey(keyEvent(tcell.KeyUp, 0))
 	if state.selected != exit {
@@ -67,8 +67,8 @@ func TestMenuSelectionWraps(t *testing.T) {
 	}
 
 	state.handleKey(keyEvent(tcell.KeyDown, 0))
-	if state.selected != playWithStockfish {
-		t.Errorf("selection after Down = %d, want Play with Stockfish", state.selected)
+	if state.selected != play {
+		t.Errorf("selection after Down = %d, want Play", state.selected)
 	}
 }
 
@@ -76,7 +76,7 @@ func TestMenuActivation(t *testing.T) {
 	state := menuState{selected: options}
 
 	state.handleKey(keyEvent(tcell.KeyEnter, 0))
-	if state.page != comingSoon || state.unavailableItem != options {
+	if state.page != comingSoon || state.comingSoonLabel != "Options" {
 		t.Errorf("options activation = %#v, want coming-soon Options page", state)
 	}
 
@@ -117,7 +117,7 @@ func TestMouseActivatesMenuItem(t *testing.T) {
 	layout := mainMenuLayout(width, height, len(state.splash()))
 
 	state.handleMouse(tcell.NewEventMouse(layout.x, layout.y+int(credits), tcell.Button1, tcell.ModNone), width, height)
-	if state.page != comingSoon || state.unavailableItem != credits {
+	if state.page != comingSoon || state.comingSoonLabel != "Credits" {
 		t.Errorf("credits click = %#v, want coming-soon Credits page", state)
 	}
 
@@ -151,5 +151,29 @@ func TestMouseHoverSelectsExitChoice(t *testing.T) {
 	state.handleMouse(tcell.NewEventMouse(width/2, height/2-1, tcell.ButtonNone, tcell.ModNone), width, height)
 	if state.confirmExit || state.page != exitConfirmation {
 		t.Errorf("No hover = %#v, want No selected on confirmation page", state)
+	}
+}
+
+func TestPlayMenuActivation(t *testing.T) {
+	state := menuState{selected: play}
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if state.page != playMenu || state.playSelected != localGame {
+		t.Fatalf("Play activation = %#v, want play menu with Local game selected", state)
+	}
+
+	if !state.handleKey(keyEvent(tcell.KeyEnter, 0)) || state.result != LocalGame {
+		t.Fatalf("Local game activation = %#v, want LocalGame result", state)
+	}
+
+	state = menuState{page: playMenu, playSelected: playWithStockfish}
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if state.page != comingSoon || state.comingSoonLabel != "Play with Stockfish" {
+		t.Errorf("Stockfish activation = %#v, want coming-soon page", state)
+	}
+
+	state = menuState{page: playMenu, playSelected: back}
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if state.page != mainMenu {
+		t.Errorf("Back activation = %#v, want main menu", state)
 	}
 }

@@ -14,25 +14,31 @@ var (
 	mutedStyle      = backgroundStyle.Foreground(tcell.NewRGBColor(157, 172, 191))
 )
 
+type Result uint8
+
+const (
+	Exit Result = iota
+	LocalGame
+)
+
 // Run starts the terminal user interface.
-func Run() error {
+func Run() (Result, error) {
 	screen, err := tcell.NewScreen()
 	if err != nil {
-		return fmt.Errorf("create terminal screen: %w", err)
+		return Exit, fmt.Errorf("create terminal screen: %w", err)
 	}
 	if err := screen.Init(); err != nil {
-		return fmt.Errorf("initialize terminal screen: %w", err)
+		return Exit, fmt.Errorf("initialize terminal screen: %w", err)
 	}
 	defer screen.Fini()
 
 	screen.SetStyle(backgroundStyle)
 	screen.EnableMouse(tcell.MouseButtonEvents, tcell.MouseMotionEvents)
 
-	run(screen)
-	return nil
+	return run(screen), nil
 }
 
-func run(screen tcell.Screen) {
+func run(screen tcell.Screen) Result {
 	state := newMenuState()
 
 	for {
@@ -45,12 +51,12 @@ func run(screen tcell.Screen) {
 			screen.Sync()
 		case *tcell.EventKey:
 			if state.handleKey(event) {
-				return
+				return state.result
 			}
 		case *tcell.EventMouse:
 			width, height := screen.Size()
 			if state.handleMouse(event, width, height) {
-				return
+				return state.result
 			}
 		}
 	}
@@ -58,7 +64,7 @@ func run(screen tcell.Screen) {
 
 func newMenuState() menuState {
 	return menuState{
-		selected:    playWithStockfish,
+		selected:    play,
 		splashIndex: rand.Intn(len(pieceSplashes)),
 	}
 }
