@@ -10,7 +10,12 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-const squareWidth = 2
+const (
+	squareWidth         = 2
+	moveNumberWidth     = 4
+	sanWidth            = 8
+	moveHistoryRowWidth = moveNumberWidth + 2 + sanWidth*2 + 2
+)
 
 type localGameState struct {
 	board            chess.Board
@@ -602,7 +607,7 @@ func luminance(color chess.RGB) uint8 {
 
 func drawMoveHistory(screen tcell.Screen, game localGameState, layout boardLayout, width int) {
 	x := layout.x + 20
-	if x+18 >= width {
+	if x+moveHistoryRowWidth > width {
 		return
 	}
 
@@ -612,16 +617,21 @@ func drawMoveHistory(screen tcell.Screen, game localGameState, layout boardLayou
 	for fullmove := start; fullmove < fullmoves; fullmove++ {
 		index := fullmove * 2
 		row := layout.y + 2 + fullmove - start
-		line := fmt.Sprintf("%d. %s", fullmove+1, game.history[index])
+		blackMove := ""
 		if index+1 < len(game.history) {
-			line += "  " + game.history[index+1]
+			blackMove = game.history[index+1]
 		}
+		line := formatMoveHistoryRow(fullmove+1, game.history[index], blackMove)
 		drawString(screen, x, row, line, backgroundStyle)
 	}
 	if !game.hasTerminalResult() {
 		drawResignButton(screen, game, layout)
 		drawFlipButton(screen, game, layout)
 	}
+}
+
+func formatMoveHistoryRow(fullmove int, whiteMove, blackMove string) string {
+	return fmt.Sprintf("%*d. %-*s  %-*s", moveNumberWidth, fullmove, sanWidth, whiteMove, sanWidth, blackMove)
 }
 
 func moveHistoryWindow(history []string) (start, end int) {

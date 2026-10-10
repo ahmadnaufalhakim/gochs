@@ -223,6 +223,21 @@ func TestMoveHistoryWindowUsesFullmoves(t *testing.T) {
 	}
 }
 
+func TestFormatMoveHistoryRowUsesFixedWidth(t *testing.T) {
+	row := formatMoveHistoryRow(5949, "Nb1xd2#", "exf8=Q#")
+	if want := "5949. Nb1xd2#   exf8=Q# "; row != want {
+		t.Errorf("formatMoveHistoryRow() = %q, want %q", row, want)
+	}
+	if len(row) != moveHistoryRowWidth {
+		t.Errorf("row width = %d, want %d", len(row), moveHistoryRowWidth)
+	}
+
+	row = formatMoveHistoryRow(1, "e4", "")
+	if len(row) != moveHistoryRowWidth {
+		t.Errorf("single-move row width = %d, want %d", len(row), moveHistoryRowWidth)
+	}
+}
+
 func TestResignationConfirmationAndCancellation(t *testing.T) {
 	game := newLocalGameState(chess.WOOD)
 	layout, ok := localBoardLayout(80, 24)
