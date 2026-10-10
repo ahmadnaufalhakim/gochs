@@ -55,6 +55,17 @@ func (c PieceColor) String() string {
 	}
 }
 
+func (c PieceColor) EndResult() string {
+	switch c {
+	case White:
+		return "1-0"
+	case Black:
+		return "0-1"
+	default:
+		return ""
+	}
+}
+
 type Piece struct {
 	Color PieceColor
 	Type  PieceType

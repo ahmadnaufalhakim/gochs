@@ -387,14 +387,14 @@ func drawLocalGame(screen tcell.Screen, game localGameState) {
 
 func gameTitle(game localGameState) string {
 	if game.resignedBy != nil {
-		return fmt.Sprintf("%s resigned · %s wins", *game.resignedBy, game.resignedBy.Opponent())
+		return fmt.Sprintf("%s resigned · %s wins %s", *game.resignedBy, game.resignedBy.Opponent(), game.resignedBy.EndResult())
 	}
 	legalMoves := chess.GenerateLegalMoves(game.board)
 	if len(legalMoves) == 0 {
 		if game.board.IsColorInCheck(game.board.ColorToMove) {
-			return fmt.Sprintf("Checkmate · %s wins", game.board.ColorToMove.Opponent())
+			return fmt.Sprintf("Checkmate · %s wins %s", game.board.ColorToMove.Opponent(), game.resignedBy.EndResult())
 		}
-		return "Stalemate"
+		return "Stalemate · ½-½"
 	}
 	if game.board.IsColorInCheck(game.board.ColorToMove) {
 		return fmt.Sprintf("%s to move - check", game.board.ColorToMove)
