@@ -32,6 +32,12 @@ const (
 
 type ColorTheme int
 
+type RGB struct {
+	R uint8
+	G uint8
+	B uint8
+}
+
 const (
 	DEFAULT ColorTheme = iota
 	WOOD
@@ -70,6 +76,62 @@ var colorThemePalettes = map[ColorTheme]squarePalette{
 	MONOCHROME: {dark: monochromeDarkSquare, light: monochromeLightSquare},
 }
 
+var colorThemeColors = map[ColorTheme][2]RGB{
+	DEFAULT:    {{R: 168, G: 168, B: 168}, {R: 128, G: 128, B: 128}},
+	WOOD:       {{R: 214, G: 158, B: 93}, {R: 122, G: 73, B: 35}},
+	PASTEL:     {{R: 255, G: 102, B: 180}, {R: 52, G: 120, B: 240}},
+	CYBERPUNK:  {{R: 200, G: 200, B: 35}, {R: 180, G: 0, B: 255}},
+	FOREST:     {{R: 167, G: 201, B: 87}, {R: 56, G: 102, B: 65}},
+	OCEAN:      {{R: 0, G: 180, B: 216}, {R: 0, G: 105, B: 148}},
+	SAKURA:     {{R: 240, G: 150, B: 175}, {R: 179, G: 70, B: 123}},
+	SUNSET:     {{R: 236, G: 179, B: 86}, {R: 184, G: 80, B: 66}},
+	LAVENDER:   {{R: 205, G: 180, B: 219}, {R: 109, G: 89, B: 122}},
+	NORD:       {{R: 216, G: 222, B: 233}, {R: 76, G: 86, B: 106}},
+	MONOCHROME: {{R: 207, G: 207, B: 207}, {R: 92, G: 92, B: 92}},
+}
+
+func (t ColorTheme) String() string {
+	switch t {
+	case DEFAULT:
+		return "Default"
+	case WOOD:
+		return "Wood"
+	case PASTEL:
+		return "Pastel"
+	case CYBERPUNK:
+		return "Cyberpunk"
+	case FOREST:
+		return "Forest"
+	case OCEAN:
+		return "Ocean"
+	case SAKURA:
+		return "Sakura"
+	case SUNSET:
+		return "Sunset"
+	case LAVENDER:
+		return "Lavender"
+	case NORD:
+		return "Nord"
+	case MONOCHROME:
+		return "Monochrome"
+	default:
+		return "Default"
+	}
+}
+
+func ColorThemes() []ColorTheme {
+	return []ColorTheme{DEFAULT, WOOD, PASTEL, CYBERPUNK, FOREST, OCEAN, SAKURA, SUNSET, LAVENDER, NORD, MONOCHROME}
+}
+
+func (t ColorTheme) SquareColors() (light RGB, dark RGB) {
+	colors, ok := colorThemeColors[t]
+	if !ok {
+		colors = colorThemeColors[DEFAULT]
+	}
+
+	return colors[0], colors[1]
+}
+
 func (r *Renderer) squareBackground(square Square) string {
 	palette, ok := colorThemePalettes[r.Theme]
 	if !ok {
@@ -83,6 +145,10 @@ func (r *Renderer) squareBackground(square Square) string {
 }
 
 func (r *Renderer) squareAt(row, column int) Square {
+	return r.SquareAt(row, column)
+}
+
+func (r *Renderer) SquareAt(row, column int) Square {
 	rank := 7 - row
 	file := column
 	if r.Perspective == Black {

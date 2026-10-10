@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	"github.com/gdamore/tcell/v2"
 )
 
@@ -76,13 +77,13 @@ func TestMenuActivation(t *testing.T) {
 	state := menuState{selected: options}
 
 	state.handleKey(keyEvent(tcell.KeyEnter, 0))
-	if state.page != comingSoon || state.comingSoonLabel != "Options" {
-		t.Errorf("options activation = %#v, want coming-soon Options page", state)
+	if state.page != optionsMenu || state.optionsSelected != theme {
+		t.Errorf("options activation = %#v, want Options menu with Theme selected", state)
 	}
 
 	state.handleKey(keyEvent(tcell.KeyEsc, 0))
 	if state.page != mainMenu {
-		t.Errorf("Esc from coming-soon page = %d, want main menu", state.page)
+		t.Errorf("Esc from Options menu = %d, want main menu", state.page)
 	}
 
 	state.selected = exit
@@ -175,5 +176,23 @@ func TestPlayMenuActivation(t *testing.T) {
 	state.handleKey(keyEvent(tcell.KeyEnter, 0))
 	if state.page != mainMenu {
 		t.Errorf("Back activation = %#v, want main menu", state)
+	}
+}
+
+func TestThemeMenuChangesTheme(t *testing.T) {
+	state := menuState{page: optionsMenu, optionsSelected: theme, theme: chess.WOOD}
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if state.page != themeMenu {
+		t.Fatalf("Theme activation = %#v, want theme menu", state)
+	}
+
+	state.handleKey(keyEvent(tcell.KeyRight, 0))
+	if state.theme == chess.WOOD {
+		t.Fatal("Right did not change theme")
+	}
+
+	state.handleKey(keyEvent(tcell.KeyEsc, 0))
+	if state.page != optionsMenu {
+		t.Errorf("Esc from theme menu = %d, want Options menu", state.page)
 	}
 }

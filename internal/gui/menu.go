@@ -3,6 +3,7 @@ package gui
 import (
 	"math/rand"
 
+	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	"github.com/gdamore/tcell/v2"
 )
 
@@ -11,6 +12,8 @@ type page uint8
 const (
 	mainMenu page = iota
 	playMenu
+	optionsMenu
+	themeMenu
 	comingSoon
 	exitConfirmation
 )
@@ -49,14 +52,29 @@ var playMenuLabels = [playMenuItemCount]string{
 	"Back",
 }
 
+type optionsMenuItem uint8
+
+const (
+	theme optionsMenuItem = iota
+	optionsBack
+	optionsMenuItemCount
+)
+
+var optionsMenuLabels = [optionsMenuItemCount]string{
+	"Theme",
+	"Back",
+}
+
 type menuState struct {
 	page            page
 	selected        menuItem
 	playSelected    playMenuItem
+	optionsSelected optionsMenuItem
 	comingSoonLabel string
 	confirmExit     bool
 	splashIndex     int
 	result          Result
+	theme           chess.ColorTheme
 }
 
 type menuLayout struct {
@@ -169,6 +187,30 @@ func (s *menuState) handleKey(event *tcell.EventKey) bool {
 		case tcell.KeyEsc:
 			s.showMainMenu()
 		}
+	case optionsMenu:
+		switch event.Key() {
+		case tcell.KeyUp:
+			s.moveOptionsSelection(-1)
+		case tcell.KeyDown:
+			s.moveOptionsSelection(1)
+		case tcell.KeyEnter:
+			if s.optionsSelected == theme {
+				s.page = themeMenu
+			} else {
+				s.showMainMenu()
+			}
+		case tcell.KeyEsc:
+			s.showMainMenu()
+		}
+	case themeMenu:
+		switch event.Key() {
+		case tcell.KeyLeft:
+			s.moveTheme(-1)
+		case tcell.KeyRight:
+			s.moveTheme(1)
+		case tcell.KeyEnter, tcell.KeyEsc:
+			s.page = optionsMenu
+		}
 	case comingSoon:
 		switch event.Key() {
 		case tcell.KeyEnter, tcell.KeyEsc:
@@ -226,6 +268,26 @@ func (s *menuState) handleMouse(event *tcell.EventMouse, width, height int) bool
 				}
 			}
 		}
+	case optionsMenu:
+		item, ok := optionsMenuItemAt(x, y, width, height)
+		if ok {
+			s.optionsSelected = item
+			if event.Buttons() == tcell.Button1 {
+				if item == theme {
+					s.page = themeMenu
+				} else {
+					s.showMainMenu()
+				}
+			}
+		}
+	case themeMenu:
+		if event.Buttons() == tcell.Button1 {
+			if x < width/2 {
+				s.moveTheme(-1)
+			} else {
+				s.moveTheme(1)
+			}
+		}
 	case comingSoon:
 		if event.Buttons() == tcell.Button1 {
 			s.showMainMenu()
@@ -264,6 +326,22 @@ func (s *menuState) movePlaySelection(delta int) {
 	s.playSelected = playMenuItem((int(s.playSelected) + delta + int(playMenuItemCount)) % int(playMenuItemCount))
 }
 
+func (s *menuState) moveOptionsSelection(delta int) {
+	s.optionsSelected = optionsMenuItem((int(s.optionsSelected) + delta + int(optionsMenuItemCount)) % int(optionsMenuItemCount))
+}
+
+func (s *menuState) moveTheme(delta int) {
+	themes := chess.ColorThemes()
+	index := 0
+	for i, candidate := range themes {
+		if candidate == s.theme {
+			index = i
+			break
+		}
+	}
+	s.theme = themes[(index+delta+len(themes))%len(themes)]
+}
+
 func (s *menuState) activate(item menuItem) {
 	if item == play {
 		s.page = playMenu
@@ -273,6 +351,11 @@ func (s *menuState) activate(item menuItem) {
 	if item == exit {
 		s.page = exitConfirmation
 		s.confirmExit = false
+		return
+	}
+	if item == options {
+		s.page = optionsMenu
+		s.optionsSelected = theme
 		return
 	}
 
@@ -299,7 +382,7 @@ func (s *menuState) showMainMenu() {
 
 func draw(screen tcell.Screen, state menuState) {
 	width, height := screen.Size()
-	if width < 48 || height < 23 {
+	if !menuFits(width, height) {
 		drawCentered(screen, height/2-1, "Terminal too small", titleStyle)
 		drawCentered(screen, height/2+1, "Resize or Esc to exit", mutedStyle)
 		return
@@ -310,6 +393,10 @@ func draw(screen tcell.Screen, state menuState) {
 		drawMainMenu(screen, state)
 	case playMenu:
 		drawPlayMenu(screen, state.playSelected)
+	case optionsMenu:
+		drawOptionsMenu(screen, state.optionsSelected)
+	case themeMenu:
+		drawThemeMenu(screen, state.theme)
 	case comingSoon:
 		drawComingSoon(screen, state.comingSoonLabel)
 	case exitConfirmation:
@@ -358,6 +445,39 @@ func drawPlayMenu(screen tcell.Screen, selected playMenuItem) {
 		drawPaddedString(screen, layout.x, layout.y+item, layout.width, label, style)
 	}
 	drawCentered(screen, layout.y+int(playMenuItemCount)+1, "Up/Down to select  Enter to choose", mutedStyle)
+}
+
+func drawOptionsMenu(screen tcell.Screen, selected optionsMenuItem) {
+	width, height := screen.Size()
+	layout := simpleMenuLayout(width, height, optionsMenuLabels[:])
+
+	drawCentered(screen, layout.y-3, "Options", titleStyle)
+	for item, label := range optionsMenuLabels {
+		style := backgroundStyle
+		if optionsMenuItem(item) == selected {
+			style = selectedStyle
+		}
+		drawPaddedString(screen, layout.x, layout.y+item, layout.width, label, style)
+	}
+	drawCentered(screen, layout.y+int(optionsMenuItemCount)+1, "Up/Down to select  Enter to choose", mutedStyle)
+}
+
+func drawThemeMenu(screen tcell.Screen, current chess.ColorTheme) {
+	width, height := screen.Size()
+	light, dark := current.SquareColors()
+
+	drawCentered(screen, height/2-4, "Theme", titleStyle)
+	drawCentered(screen, height/2-2, current.String(), backgroundStyle)
+	drawCentered(screen, height/2, "Light square", mutedStyle)
+	drawColorPreview(screen, width/2-6, height/2+1, light)
+	drawCentered(screen, height/2+3, "Dark square", mutedStyle)
+	drawColorPreview(screen, width/2-6, height/2+4, dark)
+	drawCentered(screen, height/2+6, "Left/Right to change  Enter/Esc to return", mutedStyle)
+}
+
+func drawColorPreview(screen tcell.Screen, x, y int, color chess.RGB) {
+	style := backgroundStyle.Background(tcell.NewRGBColor(int32(color.R), int32(color.G), int32(color.B)))
+	drawString(screen, x, y, "            ", style)
 }
 
 func drawComingSoon(screen tcell.Screen, label string) {
@@ -433,6 +553,21 @@ func playMenuItemAt(x, y, width, height int) (playMenuItem, bool) {
 	}
 
 	for item := range playMenuItemCount {
+		if y == layout.y+int(item) {
+			return item, true
+		}
+	}
+
+	return 0, false
+}
+
+func optionsMenuItemAt(x, y, width, height int) (optionsMenuItem, bool) {
+	layout := simpleMenuLayout(width, height, optionsMenuLabels[:])
+	if x < layout.x || x >= layout.x+layout.width {
+		return 0, false
+	}
+
+	for item := range optionsMenuItemCount {
 		if y == layout.y+int(item) {
 			return item, true
 		}

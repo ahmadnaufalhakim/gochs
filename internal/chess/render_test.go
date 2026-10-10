@@ -45,7 +45,7 @@ func TestRendererSquareBackground(t *testing.T) {
 	}
 }
 
-func TestRendererSquareAt(t *testing.T) {
+func TestRendererSquareAtExported(t *testing.T) {
 	tests := []struct {
 		name     string
 		renderer Renderer
@@ -93,5 +93,31 @@ func TestRendererPrint(t *testing.T) {
 		if !strings.Contains(output, want) {
 			t.Errorf("Print() output does not contain %q", want)
 		}
+	}
+}
+
+func TestColorThemeMetadata(t *testing.T) {
+	themes := ColorThemes()
+	if len(themes) == 0 || themes[0] != DEFAULT {
+		t.Fatalf("ColorThemes() = %v, want Default first", themes)
+	}
+
+	light, dark := WOOD.SquareColors()
+	if light != (RGB{R: 214, G: 158, B: 93}) || dark != (RGB{R: 122, G: 73, B: 35}) {
+		t.Errorf("WOOD.SquareColors() = %#v, %#v", light, dark)
+	}
+	if WOOD.String() != "Wood" {
+		t.Errorf("WOOD.String() = %q, want Wood", WOOD.String())
+	}
+}
+
+func TestRendererSquareAt(t *testing.T) {
+	white := Renderer{Perspective: White}
+	black := Renderer{Perspective: Black}
+	if got := white.SquareAt(0, 0); got != a8 {
+		t.Errorf("white SquareAt(0, 0) = %s, want a8", got)
+	}
+	if got := black.SquareAt(0, 0); got != h1 {
+		t.Errorf("black SquareAt(0, 0) = %s, want h1", got)
 	}
 }
