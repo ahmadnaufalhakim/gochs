@@ -46,8 +46,8 @@ func TestSquareAtScreenPosition(t *testing.T) {
 
 func TestLocalGameCoordinateInputMakesMove(t *testing.T) {
 	game := newLocalGameState(chess.WOOD)
-	game.input = "e2e4"
-	game.submitInput()
+	game.uciInput = "e2e4"
+	game.submitUCI()
 
 	if got := game.board.PieceAt(guiSquare(t, "e4")); got != (chess.Piece{Color: chess.White, Type: chess.Pawn}) {
 		t.Errorf("piece at e4 = %#v, want white pawn", got)
@@ -56,7 +56,10 @@ func TestLocalGameCoordinateInputMakesMove(t *testing.T) {
 		t.Errorf("ColorToMove = %s, want Black", game.board.ColorToMove)
 	}
 	if !game.hasLastMove || game.lastMove.From() != guiSquare(t, "e2") || game.lastMove.To() != guiSquare(t, "e4") {
-		t.Errorf("last move = %v, want e2-e4", game.lastMove)
+		t.Errorf("last move = %v, want e2e4", game.lastMove)
+	}
+	if len(game.history) != 1 || game.history[0] != "e4" {
+		t.Errorf("history = %v, want [e4]", game.history)
 	}
 }
 
@@ -167,7 +170,7 @@ func TestSquareStyleHighlightsLegalMovesWhileInCheck(t *testing.T) {
 }
 
 func TestMoveHistoryWindowUsesFullmoves(t *testing.T) {
-	history := make([]chess.Move, 14)
+	history := make([]string, 14)
 	start, end := moveHistoryWindow(history)
 	if start != 1 || end != 7 {
 		t.Errorf("moveHistoryWindow(14 moves) = %d, %d; want 1, 7", start, end)
@@ -189,9 +192,9 @@ func TestLocalGamePromotionInput(t *testing.T) {
 	game.board.SetPieceAt(guiSquare(t, "a8"), chess.Piece{Color: chess.Black, Type: chess.King})
 	game.board.SetPieceAt(guiSquare(t, "e7"), chess.Piece{Color: chess.White, Type: chess.Pawn})
 	game.board.ColorToMove = chess.White
-	game.input = "e7e8q"
+	game.uciInput = "e7e8q"
 
-	game.submitInput()
+	game.submitUCI()
 	if got := game.board.PieceAt(guiSquare(t, "e8")); got != (chess.Piece{Color: chess.White, Type: chess.Queen}) {
 		t.Errorf("piece at e8 = %#v, want white queen", got)
 	}

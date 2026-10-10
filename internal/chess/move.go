@@ -149,46 +149,29 @@ func (m Move) Flag() MoveFlag {
 	return MoveFlag((m >> 12) & 0xF)
 }
 
-func (m Move) String() string {
-	from := m.From().String()
-	to := m.To().String()
-
+// UCI returns the move in Universal Chess Interface coordinate notation.
+func (m Move) UCI() string {
+	uci := m.From().String() + m.To().String()
 	switch m.Flag() {
-	case KingSideCastle:
-		return from + "-" + to + " (O-O)"
-	case QueenSideCastle:
-		return from + "-" + to + " (O-O-O)"
-	case QuietMove:
-		return from + "-" + to
-	case Capture:
-		return from + "x" + to
-	case DoublePawnPush:
-		return from + "-" + to + " (double push)"
-	case EnPassant:
-		return from + "x" + to + " e.p."
-	case PromoteKnight:
-		return from + "-" + to + "=N"
-	case PromoteBishop:
-		return from + "-" + to + "=B"
-	case PromoteRook:
-		return from + "-" + to + "=R"
-	case PromoteQueen:
-		return from + "-" + to + "=Q"
-	case PromoteCaptureKnight:
-		return from + "x" + to + "=N"
-	case PromoteCaptureBishop:
-		return from + "x" + to + "=B"
-	case PromoteCaptureRook:
-		return from + "x" + to + "=R"
-	case PromoteCaptureQueen:
-		return from + "x" + to + "=Q"
-	default:
-		return from + "-" + to + " (invalid flag)"
+	case PromoteKnight, PromoteCaptureKnight:
+		return uci + "n"
+	case PromoteBishop, PromoteCaptureBishop:
+		return uci + "b"
+	case PromoteRook, PromoteCaptureRook:
+		return uci + "r"
+	case PromoteQueen, PromoteCaptureQueen:
+		return uci + "q"
 	}
+
+	return uci
+}
+
+func (m Move) String() string {
+	return m.UCI()
 }
 
 func (m Move) Print() {
-	fmt.Println(m)
+	fmt.Println(m.UCI())
 }
 
 func GeneratePawnAttacks(b Board, c PieceColor) Bitboard {

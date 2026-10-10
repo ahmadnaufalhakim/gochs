@@ -50,7 +50,7 @@ func requireMakeMove(t *testing.T, board *Board, move Move) {
 	}
 }
 
-func TestMoveEncodingAndString(t *testing.T) {
+func TestMoveEncodingAndUCI(t *testing.T) {
 	from := square(t, "e2")
 	to := square(t, "e4")
 
@@ -58,20 +58,20 @@ func TestMoveEncodingAndString(t *testing.T) {
 		flag MoveFlag
 		want string
 	}{
-		{KingSideCastle, "e2-e4 (O-O)"},
-		{QueenSideCastle, "e2-e4 (O-O-O)"},
-		{QuietMove, "e2-e4"},
-		{Capture, "e2xe4"},
-		{DoublePawnPush, "e2-e4 (double push)"},
-		{EnPassant, "e2xe4 e.p."},
-		{PromoteKnight, "e2-e4=N"},
-		{PromoteBishop, "e2-e4=B"},
-		{PromoteRook, "e2-e4=R"},
-		{PromoteQueen, "e2-e4=Q"},
-		{PromoteCaptureKnight, "e2xe4=N"},
-		{PromoteCaptureBishop, "e2xe4=B"},
-		{PromoteCaptureRook, "e2xe4=R"},
-		{PromoteCaptureQueen, "e2xe4=Q"},
+		{KingSideCastle, "e2e4"},
+		{QueenSideCastle, "e2e4"},
+		{QuietMove, "e2e4"},
+		{Capture, "e2e4"},
+		{DoublePawnPush, "e2e4"},
+		{EnPassant, "e2e4"},
+		{PromoteKnight, "e2e4n"},
+		{PromoteBishop, "e2e4b"},
+		{PromoteRook, "e2e4r"},
+		{PromoteQueen, "e2e4q"},
+		{PromoteCaptureKnight, "e2e4n"},
+		{PromoteCaptureBishop, "e2e4b"},
+		{PromoteCaptureRook, "e2e4r"},
+		{PromoteCaptureQueen, "e2e4q"},
 	}
 
 	for _, test := range tests {
@@ -86,8 +86,8 @@ func TestMoveEncodingAndString(t *testing.T) {
 			if got := move.Flag(); got != test.flag {
 				t.Errorf("Flag() = %d, want %d", got, test.flag)
 			}
-			if got := move.String(); got != test.want {
-				t.Errorf("String() = %q, want %q", got, test.want)
+			if got := move.UCI(); got != test.want {
+				t.Errorf("UCI() = %q, want %q", got, test.want)
 			}
 		})
 	}
@@ -95,7 +95,7 @@ func TestMoveEncodingAndString(t *testing.T) {
 
 func TestMovePrint(t *testing.T) {
 	move := NewMove(e2, e4, DoublePawnPush)
-	if got, want := captureStdout(t, move.Print), "e2-e4 (double push)\n"; got != want {
+	if got, want := captureStdout(t, move.Print), "e2e4\n"; got != want {
 		t.Errorf("Print() = %q, want %q", got, want)
 	}
 }

@@ -526,7 +526,7 @@ func (b *Board) MakeMove(m Move) error {
 		return nil
 	}
 
-	return fmt.Errorf("%s is an illegal move", m.String())
+	return fmt.Errorf("%s is an illegal move", m.UCI())
 }
 
 // FEN returns the board in Forsyth-Edwards Notation. Positions with

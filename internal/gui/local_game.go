@@ -18,9 +18,9 @@ type localGameState struct {
 	hoveredSquare    *chess.Square
 	promotionChoices []chess.Move
 	hoveredPromotion rune
-	input            string
+	uciInput         string
 	message          string
-	history          []chess.Move
+	history          []string
 	lastMove         chess.Move
 	hasLastMove      bool
 }
@@ -60,8 +60,8 @@ func (g *localGameState) handleKey(event *tcell.EventKey, width, height int) boo
 
 	switch event.Key() {
 	case tcell.KeyEsc:
-		if g.input != "" {
-			g.input = ""
+		if g.uciInput != "" {
+			g.uciInput = ""
 			return false
 		}
 		if g.selectedSource != nil {
@@ -70,17 +70,17 @@ func (g *localGameState) handleKey(event *tcell.EventKey, width, height int) boo
 		}
 		return true
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		if len(g.input) != 0 {
-			g.input = g.input[:len(g.input)-1]
+		if len(g.uciInput) != 0 {
+			g.uciInput = g.uciInput[:len(g.uciInput)-1]
 		}
 	case tcell.KeyEnter:
-		g.submitInput()
+		g.submitUCI()
 	case tcell.KeyRune:
 		character := unicode.ToLower(event.Rune())
 		if (character >= 'a' && character <= 'h') ||
 			(character >= '1' && character <= '8') ||
 			strings.ContainsRune("qrbn", character) {
-			g.input += string(character)
+			g.uciInput += string(character)
 		}
 	}
 
@@ -154,19 +154,19 @@ func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int)
 	}
 }
 
-func (g *localGameState) submitInput() {
-	input := g.input
-	if len(input) != 4 && len(input) != 5 {
-		g.message = "Enter a move like e2e4 or e7e8q"
+func (g *localGameState) submitUCI() {
+	uci := g.uciInput
+	if len(uci) != 4 && len(uci) != 5 {
+		g.message = "Enter UCI like e2e4 or e7e8q"
 		return
 	}
 
-	from, err := chess.ParseCoordinate(input[:2])
+	from, err := chess.ParseCoordinate(uci[:2])
 	if err != nil {
 		g.message = err.Error()
 		return
 	}
-	to, err := chess.ParseCoordinate(input[2:4])
+	to, err := chess.ParseCoordinate(uci[2:4])
 	if err != nil {
 		g.message = err.Error()
 		return
@@ -186,13 +186,13 @@ func (g *localGameState) submitInput() {
 		g.makeMove(candidates[0])
 		return
 	}
-	if len(input) == 4 {
+	if len(uci) == 4 {
 		g.promotionChoices = candidates
 		g.message = "Choose promotion: Q, R, B, or N"
 		return
 	}
 
-	if move, ok := promotionMoveForRune(candidates, rune(input[4])); ok {
+	if move, ok := promotionMoveForRune(candidates, rune(uci[4])); ok {
 		g.makeMove(move)
 		return
 	}
@@ -281,19 +281,24 @@ func promotionMoveForRune(candidates []chess.Move, character rune) (chess.Move, 
 }
 
 func (g *localGameState) makeMove(move chess.Move) {
+	san, err := g.board.SAN(move)
+	if err != nil {
+		g.message = err.Error()
+		return
+	}
 	if err := g.board.MakeMove(move); err != nil {
 		g.message = err.Error()
 		return
 	}
 
-	g.history = append(g.history, move)
+	g.history = append(g.history, san)
 	g.lastMove = move
 	g.hasLastMove = true
 	g.selectedSource = nil
 	g.hoveredSquare = nil
 	g.promotionChoices = nil
 	g.hoveredPromotion = 0
-	g.input = ""
+	g.uciInput = ""
 	g.message = ""
 }
 
@@ -463,20 +468,20 @@ func drawMoveHistory(screen tcell.Screen, game localGameState, layout boardLayou
 		row := layout.y + 2 + fullmove - start
 		line := fmt.Sprintf("%d. %s", fullmove+1, game.history[index])
 		if index+1 < len(game.history) {
-			line += "  " + game.history[index+1].String()
+			line += "  " + game.history[index+1]
 		}
 		drawString(screen, x, row, line, backgroundStyle)
 	}
 }
 
-func moveHistoryWindow(history []chess.Move) (start, end int) {
+func moveHistoryWindow(history []string) (start, end int) {
 	end = (len(history) + 1) / 2
 	return max(0, end-6), end
 }
 
 func drawGameInput(screen tcell.Screen, game localGameState, layout boardLayout) {
 	y := layout.y + 10
-	drawString(screen, layout.x-2, y, "Your move: "+game.input+"_", backgroundStyle)
+	drawString(screen, layout.x-2, y, "Your move (UCI): "+game.uciInput+"_", backgroundStyle)
 	if game.message != "" {
 		drawString(screen, layout.x-2, y+1, game.message, mutedStyle)
 	}
