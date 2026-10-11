@@ -81,6 +81,7 @@ type menuState struct {
 	customIncrement     string
 	customFocus         customTimeField
 	customMessage       string
+	message             string
 }
 
 type menuLayout struct {
@@ -176,6 +177,9 @@ func (s *menuState) handleKey(event *tcell.EventKey) bool {
 			s.moveSelection(1)
 		case tcell.KeyEnter:
 			s.activate(s.selected)
+			if s.result == Puzzle {
+				return true
+			}
 		case tcell.KeyEsc:
 			s.activate(exit)
 		}
@@ -276,6 +280,9 @@ func (s *menuState) handleMouse(event *tcell.EventMouse, width, height int) bool
 			s.selected = item
 			if event.Buttons() == tcell.Button1 {
 				s.activate(item)
+				if s.result == Puzzle {
+					return true
+				}
 			}
 		}
 	case playMenu:
@@ -398,6 +405,10 @@ func (s *menuState) activate(item menuItem) {
 		s.optionsSelected = theme
 		return
 	}
+	if item == puzzle {
+		s.result = Puzzle
+		return
+	}
 
 	s.page = comingSoon
 	s.comingSoonLabel = menuLabels[item]
@@ -463,6 +474,9 @@ func drawMainMenu(screen tcell.Screen, state menuState) {
 		drawPaddedString(screen, layout.x, layout.y+item, layout.width, label, style)
 	}
 	drawCentered(screen, layout.y+int(menuItemCount)+1, "Up/Down to select  Enter to choose", mutedStyle)
+	if state.message != "" {
+		drawCentered(screen, layout.y+int(menuItemCount)+3, state.message, mutedStyle)
+	}
 }
 
 func drawSplash(screen tcell.Screen, y int, splash []string) {

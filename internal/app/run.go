@@ -1,9 +1,19 @@
 package app
 
-import "github.com/ahmadnaufalhakim/gochs/internal/gui"
+import (
+	"database/sql"
+	"fmt"
+	"os"
+
+	"github.com/ahmadnaufalhakim/gochs/internal/entity"
+	"github.com/ahmadnaufalhakim/gochs/internal/gui"
+	"github.com/ahmadnaufalhakim/gochs/internal/repository"
+)
 
 func Run() error {
-	result, err := gui.Run()
+	loadPuzzle, closeDatabase := puzzleLoader()
+	defer closeDatabase()
+	result, err := gui.Run(loadPuzzle)
 	if err != nil {
 		return err
 	}
@@ -12,4 +22,23 @@ func Run() error {
 	}
 
 	return nil
+}
+
+func puzzleLoader() (gui.PuzzleLoader, func()) {
+	const databasePath = "data/puzzle/puzzles.db"
+	if _, err := os.Stat(databasePath); err != nil {
+		return func() (entity.Puzzle, error) {
+			return entity.Puzzle{}, fmt.Errorf("puzzle database not found; run gochs-import-puzzles")
+		}, func() {}
+	}
+	db, err := sql.Open("sqlite", "file:"+databasePath+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		return func() (entity.Puzzle, error) {
+			return entity.Puzzle{}, fmt.Errorf("open puzzle database: %w", err)
+		}, func() {}
+	}
+	repository := repository.NewPuzzleRepository(db)
+	return func() (entity.Puzzle, error) {
+		return repository.RandomPuzzle(1500, 100, nil)
+	}, func() { db.Close() }
 }

@@ -200,6 +200,16 @@ func TestPlayMenuActivation(t *testing.T) {
 	}
 }
 
+func TestPuzzleMenuActivation(t *testing.T) {
+	state := menuState{selected: puzzle}
+	if !state.handleKey(keyEvent(tcell.KeyEnter, 0)) {
+		t.Fatal("Puzzle activation did not return a transition")
+	}
+	if state.result != Puzzle {
+		t.Errorf("Puzzle activation result = %d, want Puzzle", state.result)
+	}
+}
+
 func TestCustomTimeControlValidation(t *testing.T) {
 	state := menuState{page: customTimeControlMenu, customMinutes: "0", customIncrement: "1"}
 	state.handleKey(keyEvent(tcell.KeyEnter, 0))

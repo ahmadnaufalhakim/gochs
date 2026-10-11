@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
+	"github.com/ahmadnaufalhakim/gochs/internal/entity"
 	"github.com/gdamore/tcell/v2"
 )
 
@@ -21,10 +22,13 @@ type Result uint8
 const (
 	Exit Result = iota
 	LocalGame
+	Puzzle
 )
 
+type PuzzleLoader func() (entity.Puzzle, error)
+
 // Run starts the terminal user interface.
-func Run() (Result, error) {
+func Run(loadPuzzle PuzzleLoader) (Result, error) {
 	screen, err := tcell.NewScreen()
 	if err != nil {
 		return Exit, fmt.Errorf("create terminal screen: %w", err)
@@ -37,12 +41,13 @@ func Run() (Result, error) {
 	screen.SetStyle(backgroundStyle)
 	screen.EnableMouse(tcell.MouseButtonEvents, tcell.MouseMotionEvents)
 
-	return run(screen), nil
+	return run(screen, loadPuzzle), nil
 }
 
-func run(screen tcell.Screen) Result {
+func run(screen tcell.Screen, loadPuzzle PuzzleLoader) Result {
 	state := newMenuState()
 	var game *localGameState
+	var puzzle *puzzleState
 	events := make(chan tcell.Event)
 	quitEvents := make(chan struct{})
 	defer close(quitEvents)
@@ -52,10 +57,12 @@ func run(screen tcell.Screen) Result {
 
 	for {
 		screen.Clear()
-		if game == nil {
+		if game == nil && puzzle == nil {
 			draw(screen, state)
-		} else {
+		} else if game != nil {
 			drawLocalGame(screen, *game)
+		} else {
+			drawPuzzle(screen, *puzzle)
 		}
 		screen.Show()
 
@@ -63,6 +70,9 @@ func run(screen tcell.Screen) Result {
 		case now := <-clockTicker.C:
 			if game != nil {
 				game.advanceClock(now)
+			}
+			if puzzle != nil {
+				puzzle.advance(now)
 			}
 			continue
 		case rawEvent, ok := <-events:
@@ -81,6 +91,17 @@ func run(screen tcell.Screen) Result {
 					}
 					continue
 				}
+				if puzzle != nil {
+					width, height := screen.Size()
+					switch puzzle.handleKey(event, width, height) {
+					case puzzleReturnToMenu:
+						puzzle = nil
+						state.showMainMenu()
+					case puzzleContinueTraining:
+						puzzle = startPuzzle(loadPuzzle, state.theme, &state)
+					}
+					continue
+				}
 				width, height := screen.Size()
 				if !menuFits(width, height) {
 					if event.Key() == tcell.KeyEsc {
@@ -95,6 +116,9 @@ func run(screen tcell.Screen) Result {
 						newGame.startClock(state.timeControl)
 						game = &newGame
 						state.result = Exit
+					} else if state.result == Puzzle {
+						puzzle = startPuzzle(loadPuzzle, state.theme, &state)
+						state.result = Exit
 					} else {
 						return state.result
 					}
@@ -103,6 +127,16 @@ func run(screen tcell.Screen) Result {
 				width, height := screen.Size()
 				if game != nil {
 					game.handleMouse(event, width, height)
+					continue
+				}
+				if puzzle != nil {
+					switch puzzle.handleMouse(event, width, height) {
+					case puzzleReturnToMenu:
+						puzzle = nil
+						state.showMainMenu()
+					case puzzleContinueTraining:
+						puzzle = startPuzzle(loadPuzzle, state.theme, &state)
+					}
 					continue
 				}
 				if !menuFits(width, height) {
@@ -115,6 +149,9 @@ func run(screen tcell.Screen) Result {
 						newGame.startClock(state.timeControl)
 						game = &newGame
 						state.result = Exit
+					} else if state.result == Puzzle {
+						puzzle = startPuzzle(loadPuzzle, state.theme, &state)
+						state.result = Exit
 					} else {
 						return state.result
 					}
@@ -122,6 +159,25 @@ func run(screen tcell.Screen) Result {
 			}
 		}
 	}
+}
+
+func startPuzzle(loadPuzzle PuzzleLoader, theme chess.ColorTheme, state *menuState) *puzzleState {
+	if loadPuzzle == nil {
+		state.message = "Puzzle database is unavailable"
+		return nil
+	}
+	puzzle, err := loadPuzzle()
+	if err != nil {
+		state.message = "Could not load a puzzle: " + err.Error()
+		return nil
+	}
+	newPuzzle, err := newPuzzleState(puzzle, theme, time.Now())
+	if err != nil {
+		state.message = "Could not prepare puzzle: " + err.Error()
+		return nil
+	}
+	state.message = ""
+	return &newPuzzle
 }
 
 func menuFits(width, height int) bool {
