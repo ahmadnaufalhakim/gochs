@@ -1,0 +1,450 @@
+{
+  "puzzlesRead": 6157341,
+  "themes": [
+    {
+      "key": "advancedPawn",
+      "puzzleCount": 382793,
+      "xmlLabel": "Advanced pawn",
+      "inXML": true
+    },
+    {
+      "key": "advantage",
+      "puzzleCount": 1771464,
+      "xmlLabel": "Advantage",
+      "inXML": true
+    },
+    {
+      "key": "anastasiaMate",
+      "puzzleCount": 7524,
+      "xmlLabel": "Anastasia's mate",
+      "inXML": true
+    },
+    {
+      "key": "arabianMate",
+      "puzzleCount": 7560,
+      "xmlLabel": "Arabian mate",
+      "inXML": true
+    },
+    {
+      "key": "attackingF2F7",
+      "puzzleCount": 45211,
+      "xmlLabel": "Attacking f2 or f7",
+      "inXML": true
+    },
+    {
+      "key": "attraction",
+      "puzzleCount": 223373,
+      "xmlLabel": "Attraction",
+      "inXML": true
+    },
+    {
+      "key": "backRankMate",
+      "puzzleCount": 208093,
+      "xmlLabel": "Back rank mate",
+      "inXML": true
+    },
+    {
+      "key": "balestraMate",
+      "puzzleCount": 1364,
+      "xmlLabel": "Balestra mate",
+      "inXML": true
+    },
+    {
+      "key": "bishopEndgame",
+      "puzzleCount": 84339,
+      "xmlLabel": "Bishop endgame",
+      "inXML": true
+    },
+    {
+      "key": "blindSwineMate",
+      "puzzleCount": 6361,
+      "xmlLabel": "Blind Swine mate",
+      "inXML": true
+    },
+    {
+      "key": "bodenMate",
+      "puzzleCount": 3762,
+      "xmlLabel": "Boden's mate",
+      "inXML": true
+    },
+    {
+      "key": "capturingDefender",
+      "puzzleCount": 40208,
+      "xmlLabel": "Capture the defender",
+      "inXML": true
+    },
+    {
+      "key": "castling",
+      "puzzleCount": 2502,
+      "xmlLabel": "Castling",
+      "inXML": true
+    },
+    {
+      "key": "clearance",
+      "puzzleCount": 81110,
+      "xmlLabel": "Clearance",
+      "inXML": true
+    },
+    {
+      "key": "collinearMove",
+      "puzzleCount": 7812,
+      "xmlLabel": "Collinear move",
+      "inXML": true
+    },
+    {
+      "key": "cornerMate",
+      "puzzleCount": 10782,
+      "xmlLabel": "Corner mate",
+      "inXML": true
+    },
+    {
+      "key": "crushing",
+      "puzzleCount": 2361455,
+      "xmlLabel": "Crushing",
+      "inXML": true
+    },
+    {
+      "key": "defensiveMove",
+      "puzzleCount": 371388,
+      "xmlLabel": "Defensive move",
+      "inXML": true
+    },
+    {
+      "key": "deflection",
+      "puzzleCount": 266651,
+      "xmlLabel": "Deflection",
+      "inXML": true
+    },
+    {
+      "key": "discoveredAttack",
+      "puzzleCount": 311174,
+      "xmlLabel": "Discovered attack",
+      "inXML": true
+    },
+    {
+      "key": "discoveredCheck",
+      "puzzleCount": 108796,
+      "xmlLabel": "Discovered check",
+      "inXML": true
+    },
+    {
+      "key": "doubleBishopMate",
+      "puzzleCount": 3750,
+      "xmlLabel": "Double bishop mate",
+      "inXML": true
+    },
+    {
+      "key": "doubleCheck",
+      "puzzleCount": 32210,
+      "xmlLabel": "Double check",
+      "inXML": true
+    },
+    {
+      "key": "dovetailMate",
+      "puzzleCount": 4046,
+      "xmlLabel": "Dovetail mate",
+      "inXML": true
+    },
+    {
+      "key": "enPassant",
+      "puzzleCount": 8655,
+      "xmlLabel": "En passant",
+      "inXML": true
+    },
+    {
+      "key": "endgame",
+      "puzzleCount": 3090839,
+      "xmlLabel": "Endgame",
+      "inXML": true
+    },
+    {
+      "key": "epauletteMate",
+      "puzzleCount": 22646,
+      "xmlLabel": "Epaulette mate",
+      "inXML": true
+    },
+    {
+      "key": "equality",
+      "puzzleCount": 12875,
+      "xmlLabel": "Equality",
+      "inXML": true
+    },
+    {
+      "key": "exposedKing",
+      "puzzleCount": 185240,
+      "xmlLabel": "Exposed king",
+      "inXML": true
+    },
+    {
+      "key": "fork",
+      "puzzleCount": 788760,
+      "xmlLabel": "Fork",
+      "inXML": true
+    },
+    {
+      "key": "hangingPiece",
+      "puzzleCount": 224023,
+      "xmlLabel": "Hanging piece",
+      "inXML": true
+    },
+    {
+      "key": "hookMate",
+      "puzzleCount": 10729,
+      "xmlLabel": "Hook mate",
+      "inXML": true
+    },
+    {
+      "key": "interference",
+      "puzzleCount": 22183,
+      "xmlLabel": "Interference",
+      "inXML": true
+    },
+    {
+      "key": "intermezzo",
+      "puzzleCount": 73668,
+      "xmlLabel": "Intermezzo",
+      "inXML": true
+    },
+    {
+      "key": "killBoxMate",
+      "puzzleCount": 5440,
+      "xmlLabel": "Kill box mate",
+      "inXML": true
+    },
+    {
+      "key": "kingsideAttack",
+      "puzzleCount": 538447,
+      "xmlLabel": "Kingside attack",
+      "inXML": true
+    },
+    {
+      "key": "knightEndgame",
+      "puzzleCount": 51202,
+      "xmlLabel": "Knight endgame",
+      "inXML": true
+    },
+    {
+      "key": "long",
+      "puzzleCount": 1599523,
+      "xmlLabel": "Long puzzle",
+      "inXML": true
+    },
+    {
+      "key": "master",
+      "puzzleCount": 841076,
+      "xmlLabel": "Master games",
+      "inXML": true
+    },
+    {
+      "key": "masterVsMaster",
+      "puzzleCount": 77021,
+      "xmlLabel": "Master vs Master games",
+      "inXML": true
+    },
+    {
+      "key": "mate",
+      "puzzleCount": 1957166,
+      "xmlLabel": "Checkmate",
+      "inXML": true
+    },
+    {
+      "key": "mateIn1",
+      "puzzleCount": 908244,
+      "xmlLabel": "Mate in 1",
+      "inXML": true
+    },
+    {
+      "key": "mateIn2",
+      "puzzleCount": 815267,
+      "xmlLabel": "Mate in 2",
+      "inXML": true
+    },
+    {
+      "key": "mateIn3",
+      "puzzleCount": 198408,
+      "xmlLabel": "Mate in 3",
+      "inXML": true
+    },
+    {
+      "key": "mateIn4",
+      "puzzleCount": 29006,
+      "xmlLabel": "Mate in 4",
+      "inXML": true
+    },
+    {
+      "key": "mateIn5",
+      "puzzleCount": 6243,
+      "xmlLabel": "Mate in 5 or more",
+      "inXML": true
+    },
+    {
+      "key": "middlegame",
+      "puzzleCount": 2773603,
+      "xmlLabel": "Middlegame",
+      "inXML": true
+    },
+    {
+      "key": "morphysMate",
+      "puzzleCount": 7133,
+      "xmlLabel": "Morphy's mate",
+      "inXML": true
+    },
+    {
+      "key": "oneMove",
+      "puzzleCount": 910793,
+      "xmlLabel": "One-move puzzle",
+      "inXML": true
+    },
+    {
+      "key": "opening",
+      "puzzleCount": 292899,
+      "xmlLabel": "Opening",
+      "inXML": true
+    },
+    {
+      "key": "operaMate",
+      "puzzleCount": 63940,
+      "xmlLabel": "Opera mate",
+      "inXML": true
+    },
+    {
+      "key": "pawnEndgame",
+      "puzzleCount": 228245,
+      "xmlLabel": "Pawn endgame",
+      "inXML": true
+    },
+    {
+      "key": "pillsburysMate",
+      "puzzleCount": 67644,
+      "xmlLabel": "Pillsbury's mate",
+      "inXML": true
+    },
+    {
+      "key": "pin",
+      "puzzleCount": 369437,
+      "xmlLabel": "Pin",
+      "inXML": true
+    },
+    {
+      "key": "promotion",
+      "puzzleCount": 148209,
+      "xmlLabel": "Promotion",
+      "inXML": true
+    },
+    {
+      "key": "queenEndgame",
+      "puzzleCount": 71996,
+      "xmlLabel": "Queen endgame",
+      "inXML": true
+    },
+    {
+      "key": "queenRookEndgame",
+      "puzzleCount": 46542,
+      "xmlLabel": "Queen and Rook",
+      "inXML": true
+    },
+    {
+      "key": "queensideAttack",
+      "puzzleCount": 93384,
+      "xmlLabel": "Queenside attack",
+      "inXML": true
+    },
+    {
+      "key": "quietMove",
+      "puzzleCount": 257722,
+      "xmlLabel": "Quiet move",
+      "inXML": true
+    },
+    {
+      "key": "rookEndgame",
+      "puzzleCount": 332033,
+      "xmlLabel": "Rook endgame",
+      "inXML": true
+    },
+    {
+      "key": "sacrifice",
+      "puzzleCount": 464256,
+      "xmlLabel": "Sacrifice",
+      "inXML": true
+    },
+    {
+      "key": "short",
+      "puzzleCount": 3090809,
+      "xmlLabel": "Short puzzle",
+      "inXML": true
+    },
+    {
+      "key": "skewer",
+      "puzzleCount": 136176,
+      "xmlLabel": "Skewer",
+      "inXML": true
+    },
+    {
+      "key": "smotheredMate",
+      "puzzleCount": 24332,
+      "xmlLabel": "Smothered mate",
+      "inXML": true
+    },
+    {
+      "key": "superGM",
+      "puzzleCount": 3241,
+      "xmlLabel": "Super GM games",
+      "inXML": true
+    },
+    {
+      "key": "swallowstailMate",
+      "puzzleCount": 8397,
+      "xmlLabel": "Swallow's tail mate",
+      "inXML": true
+    },
+    {
+      "key": "trappedPiece",
+      "puzzleCount": 67547,
+      "xmlLabel": "Trapped piece",
+      "inXML": true
+    },
+    {
+      "key": "triangleMate",
+      "puzzleCount": 7741,
+      "xmlLabel": "Triangle mate",
+      "inXML": true
+    },
+    {
+      "key": "underPromotion",
+      "puzzleCount": 1133,
+      "xmlLabel": "Underpromotion",
+      "inXML": true
+    },
+    {
+      "key": "veryLong",
+      "puzzleCount": 501835,
+      "xmlLabel": "Very long puzzle",
+      "inXML": true
+    },
+    {
+      "key": "vukovicMate",
+      "puzzleCount": 2445,
+      "xmlLabel": "Vuković mate",
+      "inXML": true
+    },
+    {
+      "key": "xRayAttack",
+      "puzzleCount": 21947,
+      "xmlLabel": "X-Ray attack",
+      "inXML": true
+    },
+    {
+      "key": "zugzwang",
+      "puzzleCount": 64450,
+      "xmlLabel": "Zugzwang",
+      "inXML": true
+    }
+  ],
+  "csvThemesMissingFromXML": [],
+  "xmlEntriesAbsentFromCSV": [
+    "mix",
+    "playerGames",
+    "promotePawnToQueenRookOrMinor",
+    "puzzleDownloadInformation"
+  ]
+}
