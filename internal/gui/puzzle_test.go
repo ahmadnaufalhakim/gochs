@@ -206,7 +206,7 @@ func TestDrawCompletedPuzzleShowsThemesAndContinue(t *testing.T) {
 	screen.Show()
 	contents, width, height := screen.GetContents()
 	text := screenText(contents, width, height)
-	for _, want := range []string{"Success!", "┏━ Puzzle themes", "Fork", "[➡️] Continue training"} {
+	for _, want := range []string{"Success!", "┏━ Puzzle themes", "Fork", "[💪] Continue training"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("completed puzzle rendering does not contain %q", want)
 		}

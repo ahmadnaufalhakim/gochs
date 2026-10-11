@@ -693,7 +693,7 @@ func (p puzzleState) title() string {
 func drawPuzzleControls(screen tcell.Screen, puzzle puzzleState, layout boardLayout) {
 	x := moveHistoryBoxX(layout)
 	if puzzle.isComplete() {
-		drawPuzzleButton(screen, x, layout.y+6, "[➡️] Continue training", puzzle.hoveredContinue)
+		drawPuzzleButton(screen, x, layout.y+6, "[💪] Continue training", puzzle.hoveredContinue)
 		drawPuzzleButton(screen, x, layout.y+7, "[🔄] Flip board", puzzle.hoveredFlip)
 	} else {
 		if puzzle.helpAvailable() {
@@ -730,7 +730,7 @@ func puzzleCompleteFlipButtonAt(x, y int, layout boardLayout) bool {
 }
 
 func puzzleContinueButtonAt(x, y int, layout boardLayout) bool {
-	return puzzleButtonAt(x, y, layout, layout.y+6, "[➡️] Continue training")
+	return puzzleButtonAt(x, y, layout, layout.y+6, "[💪] Continue training")
 }
 
 func puzzleButtonAt(x, y int, layout boardLayout, buttonY int, label string) bool {
