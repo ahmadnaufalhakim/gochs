@@ -129,7 +129,12 @@ func drawTimeControlMenu(screen tcell.Screen, state menuState) {
 	y += 4
 	drawTimeControlSection(screen, x, y, "🕰  Classical", state, &choiceIndex, 3)
 	y += 4
-	drawTimeControlChoice(screen, x, y, "🆓 "+timeControlChoices[choiceIndex].label, state.timeControlSelected == choiceIndex)
+	style := backgroundStyle
+	if state.timeControlSelected == choiceIndex {
+		style = selectedStyle
+	}
+	drawPaddedString(screen, x, y, 28, "", style)
+	drawString(screen, x, y, "🆓 "+timeControlChoices[choiceIndex].label, style)
 	drawCentered(screen, top+21, "Up/Down to select  Enter to choose", mutedStyle)
 }
 
