@@ -408,8 +408,11 @@ func (g localGameState) boardForDisplay() chess.Board {
 }
 
 func (g localGameState) viewedMove() (chess.Move, bool) {
-	if g.hasTerminalResult() && g.viewPly > 0 && g.viewPly <= len(g.moves) {
-		return g.moves[g.viewPly-1], true
+	if g.hasTerminalResult() {
+		if g.viewPly > 0 && g.viewPly <= len(g.moves) {
+			return g.moves[g.viewPly-1], true
+		}
+		return chess.Move(0), false
 	}
 	return g.lastMove, g.hasLastMove
 }

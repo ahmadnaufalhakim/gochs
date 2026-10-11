@@ -452,6 +452,10 @@ func TestTerminalReplayNavigation(t *testing.T) {
 	if got := gameTitle(game); got != "Viewing 2. g4" {
 		t.Errorf("gameTitle() = %q, want viewing title", got)
 	}
+	game.viewPly = 0
+	if _, ok := game.viewedMove(); ok {
+		t.Error("starting position replay has a highlighted last move")
+	}
 
 	historyX := layout.x + 20
 	game.handleMouse(tcell.NewEventMouse(historyX+moveNumberWidth+2, layout.y+2, tcell.Button1, tcell.ModNone), 80, 24)
