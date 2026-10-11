@@ -1,0 +1,113 @@
+package chess
+
+import "errors"
+
+type Square uint8
+
+func (s Square) String() string {
+	fileRune := rune('a' + s.File())
+	rankRune := rune('1' + s.Rank())
+
+	return string([]rune{fileRune, rankRune})
+}
+
+func (s Square) File() uint8 {
+	return uint8(s % 8)
+}
+
+func (s Square) Rank() uint8 {
+	return uint8(s / 8)
+}
+
+func (s Square) IsDark() bool {
+	return (s.File()+s.Rank())%2 == 0
+}
+
+func (s Square) IsLight() bool {
+	return (s.File()+s.Rank())%2 == 1
+}
+
+func (s Square) Mask() Bitboard {
+	return Bitboard(1) << s
+}
+
+const (
+	a1 Square = iota
+	b1
+	c1
+	d1
+	e1
+	f1
+	g1
+	h1
+	a2
+	b2
+	c2
+	d2
+	e2
+	f2
+	g2
+	h2
+	a3
+	b3
+	c3
+	d3
+	e3
+	f3
+	g3
+	h3
+	a4
+	b4
+	c4
+	d4
+	e4
+	f4
+	g4
+	h4
+	a5
+	b5
+	c5
+	d5
+	e5
+	f5
+	g5
+	h5
+	a6
+	b6
+	c6
+	d6
+	e6
+	f6
+	g6
+	h6
+	a7
+	b7
+	c7
+	d7
+	e7
+	f7
+	g7
+	h7
+	a8
+	b8
+	c8
+	d8
+	e8
+	f8
+	g8
+	h8
+)
+
+func ParseCoordinate(coordinate string) (Square, error) {
+	if len(coordinate) != 2 {
+		return Square(0), errors.New("coordinate must consist 2 characters")
+	}
+	if coordinate[0] < 'a' || coordinate[0] > 'h' || coordinate[1] < '1' || coordinate[1] > '8' {
+		return Square(0), errors.New("coordinate must be between a1 and h8")
+	}
+
+	file := coordinate[0] - 'a'
+	rank := coordinate[1] - '1'
+
+	return Square(file + rank*8), nil
+}
