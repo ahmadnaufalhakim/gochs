@@ -483,7 +483,7 @@ func (g *localGameState) handleReviewMouse(event *tcell.EventMouse, layout board
 		}
 		if ply, ok := g.historyPlyAt(x, y, layout); ok {
 			g.viewPly = ply
-			g.syncHistoryToView(0)
+			g.syncHistoryAfterClick(y - (layout.y + 2))
 		}
 		return
 	}
@@ -503,6 +503,15 @@ func (g *localGameState) handleReviewMouse(event *tcell.EventMouse, layout board
 				g.historyScroll = min(g.historyMaxScroll(), g.historyScroll+1)
 			}
 		}
+	}
+}
+
+func (g *localGameState) syncHistoryAfterClick(row int) {
+	switch row {
+	case 0:
+		g.historyScroll = max(0, g.historyScroll-1)
+	case 3:
+		g.historyScroll = min(g.historyMaxScroll(), g.historyScroll+1)
 	}
 }
 

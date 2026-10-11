@@ -520,6 +520,32 @@ func TestReplayHistoryViewportAnchoring(t *testing.T) {
 	}
 }
 
+func TestReplayHistoryClickScrollsOnlyAtViewportEdges(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.history = make([]string, 20)
+	game.moves = make([]chess.Move, 20)
+	game.terminalTitle = "Stalemate · ½-½"
+
+	game.historyScroll = 3
+	game.syncHistoryAfterClick(1)
+	if game.historyScroll != 3 {
+		t.Errorf("second-row click scroll = %d, want 3", game.historyScroll)
+	}
+	game.syncHistoryAfterClick(2)
+	if game.historyScroll != 3 {
+		t.Errorf("third-row click scroll = %d, want 3", game.historyScroll)
+	}
+	game.syncHistoryAfterClick(0)
+	if game.historyScroll != 2 {
+		t.Errorf("top-row click scroll = %d, want 2", game.historyScroll)
+	}
+	game.historyScroll = 3
+	game.syncHistoryAfterClick(3)
+	if game.historyScroll != 4 {
+		t.Errorf("bottom-row click scroll = %d, want 4", game.historyScroll)
+	}
+}
+
 func assertTerminalGameBlocksInput(t *testing.T, game *localGameState) {
 	t.Helper()
 	layout, ok := localBoardLayout(80, 24)
