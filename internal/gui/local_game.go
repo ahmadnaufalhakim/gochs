@@ -855,9 +855,9 @@ func resignButtonPosition(layout boardLayout) (int, int) {
 
 func resignButtonLabel(pending bool) string {
 	if pending {
-		return "[🏳️ ] Are you sure?"
+		return "[🏳️] Are you sure?"
 	}
-	return "[🏳️ ] Resign"
+	return "[🏳️] Resign"
 }
 
 func (g localGameState) resignButtonAt(x, y int, layout boardLayout) bool {
@@ -871,7 +871,7 @@ func drawFlipButton(screen tcell.Screen, game localGameState, layout boardLayout
 	if game.hoveredFlip {
 		style = selectedStyle
 	}
-	drawString(screen, x, y, "[↻ ] Flip board", style)
+	drawString(screen, x, y, "[🔄] Flip board", style)
 }
 
 func flipButtonPosition(layout boardLayout) (int, int) {
@@ -880,7 +880,7 @@ func flipButtonPosition(layout boardLayout) (int, int) {
 
 func flipButtonAt(x, y int, layout boardLayout) bool {
 	buttonX, buttonY := flipButtonPosition(layout)
-	return y == buttonY && x >= buttonX && x < buttonX+runewidth.StringWidth("[↻ ] Flip board")
+	return y == buttonY && x >= buttonX && x < buttonX+runewidth.StringWidth("[🔄] Flip board")
 }
 
 func drawGameInput(screen tcell.Screen, game localGameState, layout boardLayout) {

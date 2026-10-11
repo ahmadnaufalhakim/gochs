@@ -315,10 +315,10 @@ func TestResignationEndsLocalGame(t *testing.T) {
 }
 
 func TestResignButtonLabel(t *testing.T) {
-	if got := resignButtonLabel(false); got != "[🏳️ ] Resign" {
+	if got := resignButtonLabel(false); got != "[🏳️] Resign" {
 		t.Errorf("resignButtonLabel(false) = %q", got)
 	}
-	if got := resignButtonLabel(true); got != "[🏳️ ] Are you sure?" {
+	if got := resignButtonLabel(true); got != "[🏳️] Are you sure?" {
 		t.Errorf("resignButtonLabel(true) = %q", got)
 	}
 }

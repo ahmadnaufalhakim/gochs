@@ -632,9 +632,13 @@ func drawString(screen tcell.Screen, x, y int, text string, style tcell.Style) {
 	}
 
 	for _, character := range text {
+		characterWidth := runewidth.RuneWidth(character)
+		if characterWidth == 0 {
+			continue
+		}
 		if x >= 0 && x < width {
 			screen.SetContent(x, y, character, nil, style)
 		}
-		x += runewidth.RuneWidth(character)
+		x += characterWidth
 	}
 }
