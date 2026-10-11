@@ -3,10 +3,39 @@ package gui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	"github.com/gdamore/tcell/v2"
 )
+
+func TestClockExpiresOnActivePlayer(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.timeControl = timeControl{initial: time.Second}
+	game.clockRemaining[chess.White] = time.Second
+	game.clockRemaining[chess.Black] = time.Second
+	game.turnStarted = time.Now().Add(-time.Second)
+
+	game.advanceClock(time.Now())
+
+	if game.clockRemaining[chess.White] != 0 {
+		t.Errorf("white clock = %s, want 0", game.clockRemaining[chess.White])
+	}
+	if game.terminalTitle != "White ran out of time · Black wins 0-1" {
+		t.Errorf("terminal title = %q", game.terminalTitle)
+	}
+}
+
+func TestMoveAddsIncrement(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.startClock(timeControl{initial: time.Minute, increment: 2 * time.Second})
+	game.clockRemaining[chess.White] = time.Minute
+	game.makeMove(chess.NewMove(guiSquare(t, "e2"), guiSquare(t, "e4"), chess.DoublePawnPush))
+
+	if game.clockRemaining[chess.White] < time.Minute+time.Second {
+		t.Errorf("white clock = %s, want increment applied", game.clockRemaining[chess.White])
+	}
+}
 
 func guiSquare(t *testing.T, coordinate string) chess.Square {
 	t.Helper()
@@ -607,9 +636,30 @@ func assertTerminalControlsHidden(t *testing.T, game localGameState) {
 	screen.Show()
 	contents, width, height := screen.GetContents()
 	text := screenText(contents, width, height)
-	for _, label := range []string{"Your move (UCI):", "Resign"} {
+	for _, label := range []string{"Your move (UCI)", "Resign"} {
 		if strings.Contains(text, label) {
 			t.Errorf("terminal game rendered %q", label)
+		}
+	}
+}
+
+func TestDrawGameInputUsesFramedPanel(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 24)
+
+	game := newLocalGameState(chess.WOOD)
+	game.uciInput = "e2e4"
+	drawLocalGame(screen, game)
+	screen.Show()
+	contents, width, height := screen.GetContents()
+	text := screenText(contents, width, height)
+	for _, label := range []string{"┏━ Your move (UCI) ━┓", "e2e4_"} {
+		if !strings.Contains(text, label) {
+			t.Errorf("game input rendering does not contain %q", label)
 		}
 	}
 }

@@ -15,6 +15,8 @@ const (
 	playMenu
 	optionsMenu
 	themeMenu
+	timeControlMenu
+	customTimeControlMenu
 	comingSoon
 	exitConfirmation
 )
@@ -63,16 +65,22 @@ const (
 )
 
 type menuState struct {
-	page            page
-	selected        menuItem
-	playSelected    playMenuItem
-	optionsSelected optionsMenuItem
-	comingSoonLabel string
-	confirmExit     bool
-	splashIndex     int
-	result          Result
-	theme           chess.ColorTheme
-	autoFlip        bool
+	page                page
+	selected            menuItem
+	playSelected        playMenuItem
+	optionsSelected     optionsMenuItem
+	comingSoonLabel     string
+	confirmExit         bool
+	splashIndex         int
+	result              Result
+	theme               chess.ColorTheme
+	autoFlip            bool
+	timeControlSelected int
+	timeControl         timeControl
+	customMinutes       string
+	customIncrement     string
+	customFocus         customTimeField
+	customMessage       string
 }
 
 type menuLayout struct {
@@ -185,6 +193,19 @@ func (s *menuState) handleKey(event *tcell.EventKey) bool {
 		case tcell.KeyEsc:
 			s.showMainMenu()
 		}
+	case timeControlMenu:
+		switch event.Key() {
+		case tcell.KeyUp:
+			s.moveTimeControlSelection(-1)
+		case tcell.KeyDown:
+			s.moveTimeControlSelection(1)
+		case tcell.KeyEnter:
+			return s.activateTimeControl()
+		case tcell.KeyEsc:
+			s.page = playMenu
+		}
+	case customTimeControlMenu:
+		return s.handleCustomTimeControlKey(event)
 	case optionsMenu:
 		switch event.Key() {
 		case tcell.KeyUp:
@@ -267,6 +288,23 @@ func (s *menuState) handleMouse(event *tcell.EventMouse, width, height int) bool
 					return true
 				}
 			}
+		}
+	case timeControlMenu:
+		item, ok := timeControlChoiceAt(x, y, width, height)
+		if ok {
+			s.timeControlSelected = item
+			if event.Buttons() == tcell.Button1 {
+				return s.activateTimeControl()
+			}
+		}
+	case customTimeControlMenu:
+		if field, ok := customTimeFieldAt(x, y, width, height); ok {
+			s.customFocus = field
+			return false
+		}
+		if event.Buttons() == tcell.Button1 && customBackAt(x, y, width, height) {
+			s.page = timeControlMenu
+			s.customMessage = ""
 		}
 	case optionsMenu:
 		item, ok := optionsMenuItemAt(x, y, width, height, s.autoFlip)
@@ -368,7 +406,8 @@ func (s *menuState) activate(item menuItem) {
 func (s *menuState) activatePlayItem(item playMenuItem) {
 	switch item {
 	case localGame:
-		s.result = LocalGame
+		s.page = timeControlMenu
+		s.timeControlSelected = 0
 	case playWithStockfish:
 		s.page = comingSoon
 		s.comingSoonLabel = playMenuLabels[item]
@@ -399,6 +438,10 @@ func draw(screen tcell.Screen, state menuState) {
 		drawOptionsMenu(screen, state.optionsSelected, state.autoFlip)
 	case themeMenu:
 		drawThemeMenu(screen, state.theme)
+	case timeControlMenu:
+		drawTimeControlMenu(screen, state)
+	case customTimeControlMenu:
+		drawCustomTimeControl(screen, state)
 	case comingSoon:
 		drawComingSoon(screen, state.comingSoonLabel)
 	case exitConfirmation:

@@ -3,6 +3,7 @@ package gui
 import (
 	"fmt"
 	"math/rand"
+	"time"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	"github.com/gdamore/tcell/v2"
@@ -42,6 +43,12 @@ func Run() (Result, error) {
 func run(screen tcell.Screen) Result {
 	state := newMenuState()
 	var game *localGameState
+	events := make(chan tcell.Event)
+	quitEvents := make(chan struct{})
+	defer close(quitEvents)
+	go screen.ChannelEvents(events, quitEvents)
+	clockTicker := time.NewTicker(100 * time.Millisecond)
+	defer clockTicker.Stop()
 
 	for {
 		screen.Clear()
@@ -52,52 +59,65 @@ func run(screen tcell.Screen) Result {
 		}
 		screen.Show()
 
-		switch event := screen.PollEvent().(type) {
-		case *tcell.EventResize:
-			screen.Sync()
-		case *tcell.EventKey:
+		select {
+		case now := <-clockTicker.C:
 			if game != nil {
+				game.advanceClock(now)
+			}
+			continue
+		case rawEvent, ok := <-events:
+			if !ok {
+				return Exit
+			}
+			switch event := rawEvent.(type) {
+			case *tcell.EventResize:
+				screen.Sync()
+			case *tcell.EventKey:
+				if game != nil {
+					width, height := screen.Size()
+					if game.handleKey(event, width, height) {
+						game = nil
+						state.showMainMenu()
+					}
+					continue
+				}
 				width, height := screen.Size()
-				if game.handleKey(event, width, height) {
-					game = nil
-					state.showMainMenu()
+				if !menuFits(width, height) {
+					if event.Key() == tcell.KeyEsc {
+						return Exit
+					}
+					continue
 				}
-				continue
-			}
-			width, height := screen.Size()
-			if !menuFits(width, height) {
-				if event.Key() == tcell.KeyEsc {
-					return Exit
+				if state.handleKey(event) {
+					if state.result == LocalGame {
+						newGame := newLocalGameState(state.theme)
+						newGame.autoFlip = state.autoFlip
+						newGame.startClock(state.timeControl)
+						game = &newGame
+						state.result = Exit
+					} else {
+						return state.result
+					}
 				}
-				continue
-			}
-			if state.handleKey(event) {
-				if state.result == LocalGame {
-					newGame := newLocalGameState(state.theme)
-					newGame.autoFlip = state.autoFlip
-					game = &newGame
-					state.result = Exit
-				} else {
-					return state.result
+			case *tcell.EventMouse:
+				width, height := screen.Size()
+				if game != nil {
+					game.handleMouse(event, width, height)
+					continue
 				}
-			}
-		case *tcell.EventMouse:
-			width, height := screen.Size()
-			if game != nil {
-				game.handleMouse(event, width, height)
-				continue
-			}
-			if !menuFits(width, height) {
-				continue
-			}
-			if state.handleMouse(event, width, height) {
-				if state.result == LocalGame {
-					newGame := newLocalGameState(state.theme)
-					newGame.autoFlip = state.autoFlip
-					game = &newGame
-					state.result = Exit
-				} else {
-					return state.result
+				if !menuFits(width, height) {
+					continue
+				}
+				if state.handleMouse(event, width, height) {
+					if state.result == LocalGame {
+						newGame := newLocalGameState(state.theme)
+						newGame.autoFlip = state.autoFlip
+						newGame.startClock(state.timeControl)
+						game = &newGame
+						state.result = Exit
+					} else {
+						return state.result
+					}
 				}
 			}
 		}

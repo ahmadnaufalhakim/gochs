@@ -3,6 +3,7 @@ package gui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	"github.com/gdamore/tcell/v2"
@@ -178,8 +179,12 @@ func TestPlayMenuActivation(t *testing.T) {
 		t.Fatalf("Play activation = %#v, want play menu with Local game selected", state)
 	}
 
-	if !state.handleKey(keyEvent(tcell.KeyEnter, 0)) || state.result != LocalGame {
-		t.Fatalf("Local game activation = %#v, want LocalGame result", state)
+	if state.handleKey(keyEvent(tcell.KeyEnter, 0)) || state.page != timeControlMenu {
+		t.Fatalf("Local game activation = %#v, want time-control menu", state)
+	}
+
+	if !state.handleKey(keyEvent(tcell.KeyEnter, 0)) || state.result != LocalGame || state.timeControl != timeControlChoices[0].control {
+		t.Fatalf("Time-control activation = %#v, want LocalGame result with 1+0", state)
 	}
 
 	state = menuState{page: playMenu, playSelected: playWithStockfish}
@@ -192,6 +197,46 @@ func TestPlayMenuActivation(t *testing.T) {
 	state.handleKey(keyEvent(tcell.KeyEnter, 0))
 	if state.page != mainMenu {
 		t.Errorf("Back activation = %#v, want main menu", state)
+	}
+}
+
+func TestCustomTimeControlValidation(t *testing.T) {
+	state := menuState{page: customTimeControlMenu, customMinutes: "0", customIncrement: "1"}
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if state.page != customTimeControlMenu || state.customMessage == "" {
+		t.Fatalf("invalid custom control = %#v, want validation message", state)
+	}
+
+	state.customMinutes = "10"
+	state.customIncrement = "5"
+	if !state.handleKey(keyEvent(tcell.KeyEnter, 0)) || state.result != LocalGame {
+		t.Fatalf("valid custom control = %#v, want LocalGame result", state)
+	}
+	if state.timeControl != (timeControl{initial: 10 * time.Minute, increment: 5 * time.Second}) {
+		t.Errorf("custom time control = %#v, want 10+5", state.timeControl)
+	}
+}
+
+func TestTimeControlMenuIsCentered(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 30)
+
+	draw(screen, menuState{page: timeControlMenu})
+	screen.Show()
+	contents, width, height := screen.GetContents()
+	lines := strings.Split(screenText(contents, width, height), "\n")
+	if !strings.Contains(lines[4], "Play > Local game") {
+		t.Errorf("time-control title line = %q, want vertically centered title", lines[4])
+	}
+	if !strings.Contains(lines[25], "Up/Down to select  Enter to choose") {
+		t.Errorf("time-control hint line = %q", lines[25])
+	}
+	if choice, ok := timeControlChoiceAt(width/2, 8, width, height); !ok || choice != 0 {
+		t.Errorf("centered first choice = %d, %t; want 0, true", choice, ok)
 	}
 }
 

@@ -3,6 +3,7 @@ package gui
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
@@ -16,6 +17,7 @@ const (
 	sanWidth            = 8
 	moveHistoryRowWidth = moveNumberWidth + 2 + sanWidth*2 + 2
 	moveHistoryBoxWidth = moveHistoryRowWidth + 2
+	uciInputBoxWidth    = 21
 )
 
 type localGameState struct {
@@ -39,6 +41,9 @@ type localGameState struct {
 	positionCounts   map[uint64]uint
 	drawReason       string
 	terminalTitle    string
+	timeControl      timeControl
+	clockRemaining   [chess.PieceColorCount]time.Duration
+	turnStarted      time.Time
 	resignPending    bool
 	hoveredResign    bool
 	hoveredFlip      bool
@@ -362,6 +367,11 @@ func (g *localGameState) makeMove(move chess.Move) {
 	if g.hasTerminalResult() {
 		return
 	}
+	g.advanceClock(time.Now())
+	if g.hasTerminalResult() {
+		return
+	}
+	movingColor := g.board.ColorToMove
 	san, err := g.board.SAN(move)
 	if err != nil {
 		g.message = err.Error()
@@ -386,6 +396,10 @@ func (g *localGameState) makeMove(move chess.Move) {
 	g.message = ""
 	g.recordPosition()
 	g.updateTerminalResult()
+	if g.timeControl.isTimed() && !g.hasTerminalResult() {
+		g.clockRemaining[movingColor] += g.timeControl.increment
+		g.turnStarted = time.Now()
+	}
 	if g.hasTerminalResult() {
 		g.syncHistoryToView(1)
 	}
@@ -601,6 +615,7 @@ func drawLocalGame(screen tcell.Screen, game localGameState) {
 
 	drawBoard(screen, game, layout)
 	drawMoveHistory(screen, game, layout, width)
+	drawClocks(screen, game, layout)
 	drawGameInput(screen, game, layout)
 	if len(game.promotionChoices) != 0 {
 		drawPromotionPicker(screen, game, layout)
@@ -884,16 +899,28 @@ func flipButtonAt(x, y int, layout boardLayout) bool {
 }
 
 func drawGameInput(screen tcell.Screen, game localGameState, layout boardLayout) {
+	x := layout.x - 2
 	y := layout.y + 10
 	if game.hasTerminalResult() {
-		drawString(screen, layout.x-2, y+3, "Esc: return to menu", mutedStyle)
+		drawString(screen, x, y+3, "Esc: return to menu", mutedStyle)
 		return
 	}
-	drawString(screen, layout.x-2, y, "Your move (UCI): "+game.uciInput+"_", backgroundStyle)
+	drawUCIInputBorder(screen, x, y)
+	drawPaddedString(screen, x+1, y+1, uciInputBoxWidth-2, game.uciInput+"_", backgroundStyle)
 	if game.message != "" {
-		drawString(screen, layout.x-2, y+1, game.message, mutedStyle)
+		drawString(screen, x, y+4, game.message, mutedStyle)
 	}
-	drawString(screen, layout.x-2, y+3, "Esc: clear selection or return to menu", mutedStyle)
+	drawString(screen, x, y+5, "Esc: clear selection or return to menu", mutedStyle)
+}
+
+func drawUCIInputBorder(screen tcell.Screen, x, y int) {
+	topLabel := "━ Your move (UCI) "
+	topBorder := "┏" + topLabel + strings.Repeat("━", uciInputBoxWidth-runewidth.StringWidth(topLabel)-2) + "┓"
+	drawString(screen, x, y, topBorder, mutedStyle)
+	drawString(screen, x+3, y, "Your move (UCI)", titleStyle)
+	drawString(screen, x, y+1, "┃", mutedStyle)
+	drawString(screen, x+uciInputBoxWidth-1, y+1, "┃", mutedStyle)
+	drawString(screen, x, y+2, "┗"+strings.Repeat("━", uciInputBoxWidth-2)+"┛", mutedStyle)
 }
 
 func drawPromotionPicker(screen tcell.Screen, game localGameState, layout boardLayout) {
@@ -973,7 +1000,7 @@ func localBoardLayout(width, height int) (boardLayout, bool) {
 		return boardLayout{}, false
 	}
 
-	const panelHeight = 18
+	const panelHeight = 20
 	return boardLayout{x: (width - 44) / 2, y: (height-panelHeight)/2 + 4}, true
 }
 
