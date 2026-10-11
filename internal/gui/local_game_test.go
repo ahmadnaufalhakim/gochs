@@ -238,6 +238,30 @@ func TestFormatMoveHistoryRowUsesFixedWidth(t *testing.T) {
 	}
 }
 
+func TestDrawMoveHistoryBorder(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 24)
+
+	game := newLocalGameState(chess.WOOD)
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("local board layout is unavailable")
+	}
+	drawMoveHistory(screen, game, layout, 80)
+	screen.Show()
+	contents, width, height := screen.GetContents()
+	text := screenText(contents, width, height)
+	for _, border := range []string{"┏", "━", "┓", "┃", "┗", "┛"} {
+		if !strings.Contains(text, border) {
+			t.Errorf("move history border does not contain %q", border)
+		}
+	}
+}
+
 func TestResignationConfirmationAndCancellation(t *testing.T) {
 	game := newLocalGameState(chess.WOOD)
 	layout, ok := localBoardLayout(80, 24)
@@ -457,12 +481,12 @@ func TestTerminalReplayNavigation(t *testing.T) {
 		t.Error("starting position replay has a highlighted last move")
 	}
 
-	historyX := layout.x + 20
-	game.handleMouse(tcell.NewEventMouse(historyX+moveNumberWidth+2, layout.y+2, tcell.Button1, tcell.ModNone), 80, 24)
+	historyX := moveHistoryBoxX(layout) + 1
+	game.handleMouse(tcell.NewEventMouse(historyX+moveNumberWidth+2, layout.y+1, tcell.Button1, tcell.ModNone), 80, 24)
 	if game.viewPly != 1 {
 		t.Errorf("White SAN click selected ply %d, want 1", game.viewPly)
 	}
-	game.handleMouse(tcell.NewEventMouse(historyX+moveNumberWidth+2+sanWidth+2, layout.y+2, tcell.Button1, tcell.ModNone), 80, 24)
+	game.handleMouse(tcell.NewEventMouse(historyX+moveNumberWidth+2+sanWidth+2, layout.y+1, tcell.Button1, tcell.ModNone), 80, 24)
 	if game.viewPly != 2 {
 		t.Errorf("Black SAN click selected ply %d, want 2", game.viewPly)
 	}
@@ -514,7 +538,7 @@ func TestReplayHistoryViewportAnchoring(t *testing.T) {
 	game.viewPly = 12
 	game.historyScroll = 3
 	viewPly := game.viewPly
-	historyX := layout.x + 20
+	historyX := moveHistoryBoxX(layout) + 1
 	game.handleMouse(tcell.NewEventMouse(historyX, layout.y+2, tcell.WheelDown, tcell.ModNone), 80, 24)
 	if game.viewPly != viewPly {
 		t.Errorf("history wheel changed view ply to %d, want %d", game.viewPly, viewPly)

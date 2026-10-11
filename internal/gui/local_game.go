@@ -15,6 +15,7 @@ const (
 	moveNumberWidth     = 4
 	sanWidth            = 8
 	moveHistoryRowWidth = moveNumberWidth + 2 + sanWidth*2 + 2
+	moveHistoryBoxWidth = moveHistoryRowWidth + 2
 )
 
 type localGameState struct {
@@ -486,7 +487,7 @@ func (g *localGameState) handleReviewMouse(event *tcell.EventMouse, layout board
 		}
 		if ply, ok := g.historyPlyAt(x, y, layout); ok {
 			g.viewPly = ply
-			g.syncHistoryAfterClick(y - (layout.y + 2))
+			g.syncHistoryAfterClick(y - (layout.y + 1))
 		}
 		return
 	}
@@ -559,18 +560,19 @@ func (g localGameState) historyPlyAt(x, y int, layout boardLayout) (int, bool) {
 	if !historyAreaAt(x, y, layout) {
 		return 0, false
 	}
-	row := y - (layout.y + 2)
+	row := y - (layout.y + 1)
 	index := (g.historyScroll + row) * 2
-	if x < layout.x+20+moveNumberWidth+2 {
+	startX := moveHistoryBoxX(layout) + 1
+	if x < startX+moveNumberWidth+2 {
 		return 0, false
 	}
-	if x < layout.x+20+moveNumberWidth+2+sanWidth {
+	if x < startX+moveNumberWidth+2+sanWidth {
 		if index < len(g.history) {
 			return index + 1, true
 		}
 		return 0, false
 	}
-	if x < layout.x+20+moveNumberWidth+2+sanWidth+2 {
+	if x < startX+moveNumberWidth+2+sanWidth+2 {
 		return 0, false
 	}
 	if index+1 < len(g.history) {
@@ -580,8 +582,12 @@ func (g localGameState) historyPlyAt(x, y int, layout boardLayout) (int, bool) {
 }
 
 func historyAreaAt(x, y int, layout boardLayout) bool {
-	startX := layout.x + 20
-	return x >= startX && x < startX+moveHistoryRowWidth && y >= layout.y+2 && y < layout.y+6
+	startX := moveHistoryBoxX(layout) + 1
+	return x >= startX && x < startX+moveHistoryRowWidth && y >= layout.y+1 && y < layout.y+5
+}
+
+func moveHistoryBoxX(layout boardLayout) int {
+	return layout.x + 20
 }
 
 func drawLocalGame(screen tcell.Screen, game localGameState) {
@@ -766,13 +772,13 @@ func luminance(color chess.RGB) uint8 {
 }
 
 func drawMoveHistory(screen tcell.Screen, game localGameState, layout boardLayout, width int) {
-	x := layout.x + 20
-	if x+moveHistoryRowWidth > width {
+	x := moveHistoryBoxX(layout)
+	if x+moveHistoryBoxWidth > width {
 		return
 	}
 
 	drawString(screen, x, layout.y-2, gameTitle(game), titleStyle)
-	drawString(screen, x, layout.y, "Moves", titleStyle)
+	drawMoveHistoryBorder(screen, x, layout.y)
 	start := game.historyScroll
 	if !game.hasTerminalResult() {
 		start, _ = moveHistoryWindow(game.history)
@@ -787,12 +793,24 @@ func drawMoveHistory(screen tcell.Screen, game localGameState, layout boardLayou
 		if index+1 < len(game.history) {
 			blackMove = game.history[index+1]
 		}
-		drawMoveHistoryRow(screen, x, layout.y+2+row, fullmove+1, game, index, blackMove)
+		drawMoveHistoryRow(screen, x+1, layout.y+1+row, fullmove+1, game, index, blackMove)
 	}
 	if !game.hasTerminalResult() {
 		drawResignButton(screen, game, layout)
 	}
 	drawFlipButton(screen, game, layout)
+}
+
+func drawMoveHistoryBorder(screen tcell.Screen, x, y int) {
+	topLabel := "━ Moves "
+	topBorder := "┏" + topLabel + strings.Repeat("━", moveHistoryRowWidth-runewidth.StringWidth(topLabel)) + "┓"
+	drawString(screen, x, y, topBorder, mutedStyle)
+	drawString(screen, x+3, y, "Moves", titleStyle)
+	for row := 1; row <= 4; row++ {
+		drawString(screen, x, y+row, "┃", mutedStyle)
+		drawString(screen, x+moveHistoryBoxWidth-1, y+row, "┃", mutedStyle)
+	}
+	drawString(screen, x, y+5, "┗"+strings.Repeat("━", moveHistoryRowWidth)+"┛", mutedStyle)
 }
 
 func drawMoveHistoryRow(screen tcell.Screen, x, y, fullmove int, game localGameState, index int, blackMove string) {
@@ -832,7 +850,7 @@ func drawResignButton(screen tcell.Screen, game localGameState, layout boardLayo
 }
 
 func resignButtonPosition(layout boardLayout) (int, int) {
-	return layout.x + 20, layout.y + 7
+	return moveHistoryBoxX(layout), layout.y + 6
 }
 
 func resignButtonLabel(pending bool) string {
@@ -857,7 +875,7 @@ func drawFlipButton(screen tcell.Screen, game localGameState, layout boardLayout
 }
 
 func flipButtonPosition(layout boardLayout) (int, int) {
-	return layout.x + 20, layout.y + 8
+	return moveHistoryBoxX(layout), layout.y + 7
 }
 
 func flipButtonAt(x, y int, layout boardLayout) bool {
@@ -956,7 +974,7 @@ func localBoardLayout(width, height int) (boardLayout, bool) {
 	}
 
 	const panelHeight = 18
-	return boardLayout{x: (width - 42) / 2, y: (height-panelHeight)/2 + 4}, true
+	return boardLayout{x: (width - 44) / 2, y: (height-panelHeight)/2 + 4}, true
 }
 
 func squareAtScreenPosition(x, y int, layout boardLayout, perspective chess.PieceColor) (chess.Square, bool) {
