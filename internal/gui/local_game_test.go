@@ -123,6 +123,19 @@ func TestSquareAtScreenPosition(t *testing.T) {
 	}
 }
 
+func TestLocalBoardLayoutCentersSpacedPanels(t *testing.T) {
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("local board layout is unavailable")
+	}
+	if gap := moveHistoryBoxX(layout) - (layout.x + 8*squareWidth); gap != 8 {
+		t.Errorf("panel gap = %d, want 8", gap)
+	}
+	if left := layout.x - 2; left != 14 {
+		t.Errorf("panel left = %d, want 14", left)
+	}
+}
+
 func TestSquareAtScreenPositionFromBlackPerspective(t *testing.T) {
 	layout := boardLayout{x: 10, y: 2}
 	for _, test := range []struct {

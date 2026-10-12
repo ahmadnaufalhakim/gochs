@@ -716,7 +716,7 @@ func historyAreaAt(x, y int, layout boardLayout) bool {
 }
 
 func moveHistoryBoxX(layout boardLayout) int {
-	return layout.x + 20
+	return layout.x + 24
 }
 
 func drawLocalGame(screen tcell.Screen, game localGameState) {
@@ -1053,7 +1053,7 @@ func savePGNButtonPosition(layout boardLayout, includeClocks bool) (int, int) {
 
 func savePGNButtonLabel(includeClocks bool) string {
 	if includeClocks {
-		return "[⏱️] Save PGN with clocks"
+		return "[⏱️] Save PGN + clocks"
 	}
 	return "[💾] Save PGN"
 }
@@ -1146,12 +1146,12 @@ func promotionPieceType(character rune) chess.PieceType {
 }
 
 func localBoardLayout(width, height int) (boardLayout, bool) {
-	if width < 48 || height < 20 {
+	if width < 52 || height < 20 {
 		return boardLayout{}, false
 	}
 
 	const panelHeight = 20
-	return boardLayout{x: (width - 44) / 2, y: (height-panelHeight)/2 + 4}, true
+	return boardLayout{x: (width - 48) / 2, y: (height-panelHeight)/2 + 4}, true
 }
 
 func squareAtScreenPosition(x, y int, layout boardLayout, perspective chess.PieceColor) (chess.Square, bool) {
