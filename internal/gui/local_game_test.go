@@ -1,6 +1,8 @@
 package gui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +36,53 @@ func TestMoveAddsIncrement(t *testing.T) {
 
 	if game.clockRemaining[chess.White] < time.Minute+time.Second {
 		t.Errorf("white clock = %s, want increment applied", game.clockRemaining[chess.White])
+	}
+	if len(game.clockHistory) != 1 || game.clockHistory[0] != game.clockRemaining[chess.White] {
+		t.Errorf("clock history = %v, want final white clock %s", game.clockHistory, game.clockRemaining[chess.White])
+	}
+}
+
+func TestPGNResultAndTermination(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.timeControl = timeControl{initial: time.Minute, event: "bullet game"}
+	game.timedOutBy = new(chess.PieceColor)
+	*game.timedOutBy = chess.Black
+
+	if got := game.pgnResult(); got != "1-0" {
+		t.Errorf("timeout result = %q, want 1-0", got)
+	}
+	if got := game.pgnTermination(); got != "Time forfeit" {
+		t.Errorf("timeout termination = %q, want Time forfeit", got)
+	}
+	if got := game.timeControl.pgnValue(); got != "60+0" {
+		t.Errorf("time control = %q, want 60+0", got)
+	}
+}
+
+func TestSavePGNWritesXDGDataFile(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", directory)
+	game := newLocalGameState(chess.WOOD)
+	game.startedAt = time.Date(2026, time.October, 12, 8, 30, 0, 0, time.UTC)
+	game.timeControl = timeControl{initial: 10 * time.Minute, increment: 5 * time.Second, event: "rapid game"}
+	game.history = []string{"e4", "e5"}
+	game.clockHistory = []time.Duration{10 * time.Minute, 10*time.Minute - time.Second}
+	game.terminalTitle = "Stalemate · ½-½"
+
+	if err := game.savePGN(true); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "gochs", "games", "20261012-083000.000000000-clocks.pgn")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	if !strings.Contains(text, "[Event \"rapid game\"]") || !strings.Contains(text, "[TimeControl \"600+5\"]") {
+		t.Errorf("saved PGN tags = %q", text)
+	}
+	if !strings.Contains(text, "1. e4 { [%clk 0:10:00] } 1... e5 { [%clk 0:09:59] } 1/2-1/2") {
+		t.Errorf("saved PGN movetext = %q", text)
 	}
 }
 

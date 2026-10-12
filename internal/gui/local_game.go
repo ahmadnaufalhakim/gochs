@@ -2,11 +2,14 @@ package gui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
+	"github.com/ahmadnaufalhakim/gochs/internal/pgn"
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
 )
@@ -21,33 +24,39 @@ const (
 )
 
 type localGameState struct {
-	board            chess.Board
-	theme            chess.ColorTheme
-	perspective      chess.PieceColor
-	autoFlip         bool
-	selectedSource   *chess.Square
-	hoveredSquare    *chess.Square
-	promotionChoices []chess.Move
-	hoveredPromotion rune
-	uciInput         string
-	message          string
-	history          []string
-	moves            []chess.Move
-	positions        []chess.Board
-	viewPly          int
-	historyScroll    int
-	lastMove         chess.Move
-	hasLastMove      bool
-	positionCounts   map[uint64]uint
-	drawReason       string
-	terminalTitle    string
-	timeControl      timeControl
-	clockRemaining   [chess.PieceColorCount]time.Duration
-	turnStarted      time.Time
-	resignPending    bool
-	hoveredResign    bool
-	hoveredFlip      bool
-	resignedBy       *chess.PieceColor
+	board             chess.Board
+	theme             chess.ColorTheme
+	perspective       chess.PieceColor
+	autoFlip          bool
+	selectedSource    *chess.Square
+	hoveredSquare     *chess.Square
+	promotionChoices  []chess.Move
+	hoveredPromotion  rune
+	uciInput          string
+	message           string
+	history           []string
+	clockHistory      []time.Duration
+	moves             []chess.Move
+	positions         []chess.Board
+	viewPly           int
+	historyScroll     int
+	lastMove          chess.Move
+	hasLastMove       bool
+	positionCounts    map[uint64]uint
+	drawReason        string
+	terminalTitle     string
+	timedOutBy        *chess.PieceColor
+	timeControl       timeControl
+	clockRemaining    [chess.PieceColorCount]time.Duration
+	turnStarted       time.Time
+	startedAt         time.Time
+	resignPending     bool
+	hoveredResign     bool
+	hoveredFlip       bool
+	hoveredSavePGN    bool
+	hoveredSaveClocks bool
+	exportMessage     string
+	resignedBy        *chess.PieceColor
 }
 
 type boardLayout struct {
@@ -65,6 +74,7 @@ func newLocalGameState(theme chess.ColorTheme) localGameState {
 		perspective:    chess.White,
 		positionCounts: map[uint64]uint{board.PositionKey(): 1},
 		positions:      []chess.Board{board},
+		startedAt:      time.Now(),
 	}
 }
 
@@ -400,6 +410,9 @@ func (g *localGameState) makeMove(move chess.Move) {
 		g.clockRemaining[movingColor] += g.timeControl.increment
 		g.turnStarted = time.Now()
 	}
+	if g.timeControl.isTimed() {
+		g.clockHistory = append(g.clockHistory, g.clockRemaining[movingColor])
+	}
 	if g.hasTerminalResult() {
 		g.syncHistoryToView(1)
 	}
@@ -487,16 +500,118 @@ func (g localGameState) hasTerminalResult() bool {
 	return g.hasResigned() || g.terminalTitle != ""
 }
 
+func (g localGameState) pgnGame() pgn.Game {
+	return pgn.Game{
+		Event:       g.timeControl.event,
+		Site:        "https://github.com/ahmadnaufalhakim/gochs",
+		Date:        g.startedAt,
+		Round:       "-",
+		White:       "White",
+		Black:       "Black",
+		Result:      g.pgnResult(),
+		Variant:     "Standard",
+		TimeControl: g.timeControl.pgnValue(),
+		Termination: g.pgnTermination(),
+		Moves:       g.history,
+		Clocks:      g.clockHistory,
+	}
+}
+
+func (g localGameState) pgnResult() string {
+	if g.resignedBy != nil {
+		return g.resignedBy.Opponent().EndResult()
+	}
+	if g.timedOutBy != nil {
+		return g.timedOutBy.Opponent().EndResult()
+	}
+	if g.terminalTitle == "" {
+		return "*"
+	}
+	if len(chess.GenerateLegalMoves(g.board)) == 0 && g.board.IsColorInCheck(g.board.ColorToMove) {
+		return g.board.ColorToMove.Opponent().EndResult()
+	}
+
+	return "1/2-1/2"
+}
+
+func (g localGameState) pgnTermination() string {
+	if g.timedOutBy != nil {
+		return "Time forfeit"
+	}
+
+	return "Normal"
+}
+
+func (c timeControl) pgnValue() string {
+	if !c.isTimed() {
+		return "-"
+	}
+
+	return fmt.Sprintf("%d+%d", int(c.initial/time.Second), int(c.increment/time.Second))
+}
+
+func (g *localGameState) savePGN(includeClocks bool) error {
+	directory, err := pgnDirectory()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return err
+	}
+
+	format := "plain"
+	if includeClocks {
+		format = "clocks"
+	}
+	startedAt := g.startedAt
+	if startedAt.IsZero() {
+		startedAt = time.Now()
+	}
+	path := filepath.Join(directory, startedAt.Format("20060102-150405.000000000")+"-"+format+".pgn")
+	if err := os.WriteFile(path, []byte(pgn.Format(g.pgnGame(), includeClocks)), 0o600); err != nil {
+		return err
+	}
+
+	g.exportMessage = "Saved " + filepath.Base(path)
+	return nil
+}
+
+func pgnDirectory() (string, error) {
+	if dataHome := os.Getenv("XDG_DATA_HOME"); dataHome != "" {
+		return filepath.Join(dataHome, "gochs", "games"), nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".local", "share", "gochs", "games"), nil
+}
+
 func (g *localGameState) handleReviewMouse(event *tcell.EventMouse, layout boardLayout) {
 	x, y := event.Position()
 	buttons := event.Buttons()
 	if buttons == tcell.ButtonNone {
 		g.hoveredFlip = flipButtonAt(x, y, layout)
+		g.hoveredSavePGN = savePGNButtonAt(x, y, layout, false)
+		g.hoveredSaveClocks = savePGNButtonAt(x, y, layout, true)
 		return
 	}
 	if buttons == tcell.Button1 {
 		if flipButtonAt(x, y, layout) {
 			g.flipBoard()
+			return
+		}
+		if savePGNButtonAt(x, y, layout, false) {
+			if err := g.savePGN(false); err != nil {
+				g.exportMessage = "Could not save PGN: " + err.Error()
+			}
+			return
+		}
+		if savePGNButtonAt(x, y, layout, true) {
+			if err := g.savePGN(true); err != nil {
+				g.exportMessage = "Could not save PGN: " + err.Error()
+			}
 			return
 		}
 		if ply, ok := g.historyPlyAt(x, y, layout); ok {
@@ -902,7 +1017,12 @@ func drawGameInput(screen tcell.Screen, game localGameState, layout boardLayout)
 	x := layout.x - 2
 	y := layout.y + 10
 	if game.hasTerminalResult() {
-		drawString(screen, x, y+3, "Esc: return to menu", mutedStyle)
+		drawSavePGNButton(screen, game, layout, false)
+		drawSavePGNButton(screen, game, layout, true)
+		if game.exportMessage != "" {
+			drawString(screen, x, y+3, game.exportMessage, mutedStyle)
+		}
+		drawString(screen, x, y+4, "Esc: return to menu", mutedStyle)
 		return
 	}
 	drawUCIInputBorder(screen, x, y)
@@ -911,6 +1031,36 @@ func drawGameInput(screen tcell.Screen, game localGameState, layout boardLayout)
 		drawString(screen, x, y+4, game.message, mutedStyle)
 	}
 	drawString(screen, x, y+5, "Esc: clear selection or return to menu", mutedStyle)
+}
+
+func drawSavePGNButton(screen tcell.Screen, game localGameState, layout boardLayout, includeClocks bool) {
+	x, y := savePGNButtonPosition(layout, includeClocks)
+	label := savePGNButtonLabel(includeClocks)
+	style := backgroundStyle
+	if (!includeClocks && game.hoveredSavePGN) || (includeClocks && game.hoveredSaveClocks) {
+		style = selectedStyle
+	}
+	drawString(screen, x, y, label, style)
+}
+
+func savePGNButtonPosition(layout boardLayout, includeClocks bool) (int, int) {
+	y := layout.y + 10
+	if includeClocks {
+		y++
+	}
+	return layout.x - 2, y
+}
+
+func savePGNButtonLabel(includeClocks bool) string {
+	if includeClocks {
+		return "[⏱️] Save PGN with clocks"
+	}
+	return "[💾] Save PGN"
+}
+
+func savePGNButtonAt(x, y int, layout boardLayout, includeClocks bool) bool {
+	buttonX, buttonY := savePGNButtonPosition(layout, includeClocks)
+	return y == buttonY && x >= buttonX && x < buttonX+runewidth.StringWidth(savePGNButtonLabel(includeClocks))
 }
 
 func drawUCIInputBorder(screen tcell.Screen, x, y int) {

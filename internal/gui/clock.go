@@ -29,6 +29,8 @@ func (g *localGameState) advanceClock(now time.Time) {
 	}
 	if elapsed >= g.clockRemaining[color] {
 		g.clockRemaining[color] = 0
+		g.timedOutBy = new(chess.PieceColor)
+		*g.timedOutBy = color
 		winner := color.Opponent()
 		g.terminalTitle = fmt.Sprintf("%s ran out of time · %s wins %s", color, winner, winner.EndResult())
 		g.selectedSource = nil

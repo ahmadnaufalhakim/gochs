@@ -11,6 +11,7 @@ import (
 type timeControl struct {
 	initial   time.Duration
 	increment time.Duration
+	event     string
 }
 
 func (c timeControl) isTimed() bool {
@@ -24,18 +25,18 @@ type timeControlChoice struct {
 }
 
 var timeControlChoices = []timeControlChoice{
-	{label: "1+0", control: timeControl{initial: time.Minute}},
-	{label: "2+1", control: timeControl{initial: 2 * time.Minute, increment: time.Second}},
-	{label: "3+0", control: timeControl{initial: 3 * time.Minute}},
-	{label: "3+2", control: timeControl{initial: 3 * time.Minute, increment: 2 * time.Second}},
-	{label: "5+0", control: timeControl{initial: 5 * time.Minute}},
-	{label: "5+3", control: timeControl{initial: 5 * time.Minute, increment: 3 * time.Second}},
-	{label: "10+0", control: timeControl{initial: 10 * time.Minute}},
-	{label: "10+5", control: timeControl{initial: 10 * time.Minute, increment: 5 * time.Second}},
-	{label: "15+10", control: timeControl{initial: 15 * time.Minute, increment: 10 * time.Second}},
-	{label: "30+0", control: timeControl{initial: 30 * time.Minute}},
-	{label: "30+20", control: timeControl{initial: 30 * time.Minute, increment: 20 * time.Second}},
-	{label: "Unlimited time"},
+	{label: "1+0", control: timeControl{initial: time.Minute, event: "bullet game"}},
+	{label: "2+1", control: timeControl{initial: 2 * time.Minute, increment: time.Second, event: "bullet game"}},
+	{label: "3+0", control: timeControl{initial: 3 * time.Minute, event: "blitz game"}},
+	{label: "3+2", control: timeControl{initial: 3 * time.Minute, increment: 2 * time.Second, event: "blitz game"}},
+	{label: "5+0", control: timeControl{initial: 5 * time.Minute, event: "blitz game"}},
+	{label: "5+3", control: timeControl{initial: 5 * time.Minute, increment: 3 * time.Second, event: "blitz game"}},
+	{label: "10+0", control: timeControl{initial: 10 * time.Minute, event: "rapid game"}},
+	{label: "10+5", control: timeControl{initial: 10 * time.Minute, increment: 5 * time.Second, event: "rapid game"}},
+	{label: "15+10", control: timeControl{initial: 15 * time.Minute, increment: 10 * time.Second, event: "rapid game"}},
+	{label: "30+0", control: timeControl{initial: 30 * time.Minute, event: "classical game"}},
+	{label: "30+20", control: timeControl{initial: 30 * time.Minute, increment: 20 * time.Second, event: "classical game"}},
+	{label: "Unlimited time", control: timeControl{event: "untimed game"}},
 	{label: "Custom", custom: true},
 }
 
@@ -107,6 +108,7 @@ func (s *menuState) startCustomTimeControl() bool {
 	s.timeControl = timeControl{
 		initial:   time.Duration(minutes) * time.Minute,
 		increment: time.Duration(increment) * time.Second,
+		event:     "custom game",
 	}
 	s.result = LocalGame
 	return true

@@ -222,7 +222,7 @@ func TestCustomTimeControlValidation(t *testing.T) {
 	if !state.handleKey(keyEvent(tcell.KeyEnter, 0)) || state.result != LocalGame {
 		t.Fatalf("valid custom control = %#v, want LocalGame result", state)
 	}
-	if state.timeControl != (timeControl{initial: 10 * time.Minute, increment: 5 * time.Second}) {
+	if state.timeControl != (timeControl{initial: 10 * time.Minute, increment: 5 * time.Second, event: "custom game"}) {
 		t.Errorf("custom time control = %#v, want 10+5", state.timeControl)
 	}
 }
