@@ -40,6 +40,21 @@ func (b Board) SAN(move Move) (string, error) {
 	return b.sanSuffix(move, notation.String()), nil
 }
 
+// ParseSAN resolves a legal move written in Standard Algebraic Notation.
+func (b Board) ParseSAN(input string) (Move, error) {
+	input = strings.TrimSpace(input)
+	for _, move := range GenerateLegalMoves(b) {
+		san, err := b.SAN(move)
+		if err != nil {
+			continue
+		}
+		if input == san || strings.TrimRight(input, "+#") == strings.TrimRight(san, "+#") {
+			return move, nil
+		}
+	}
+	return Move(0), fmt.Errorf("%s is an illegal SAN move", input)
+}
+
 func (b Board) sanDisambiguation(move Move, legalMoves []Move, pieceType PieceType) string {
 	sameFile := false
 	sameRank := false
