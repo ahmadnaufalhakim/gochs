@@ -22,13 +22,14 @@ type Result uint8
 const (
 	Exit Result = iota
 	LocalGame
+	StockfishGame
 	Puzzle
 )
 
 type PuzzleLoader func() (entity.Puzzle, error)
 
 // Run starts the terminal user interface.
-func Run(loadPuzzle PuzzleLoader) (Result, error) {
+func Run(loadPuzzle PuzzleLoader, stockfishPath string) (Result, error) {
 	screen, err := tcell.NewScreen()
 	if err != nil {
 		return Exit, fmt.Errorf("create terminal screen: %w", err)
@@ -41,11 +42,12 @@ func Run(loadPuzzle PuzzleLoader) (Result, error) {
 	screen.SetStyle(backgroundStyle)
 	screen.EnableMouse(tcell.MouseButtonEvents, tcell.MouseMotionEvents)
 
-	return run(screen, loadPuzzle), nil
+	return run(screen, loadPuzzle, stockfishPath), nil
 }
 
-func run(screen tcell.Screen, loadPuzzle PuzzleLoader) Result {
+func run(screen tcell.Screen, loadPuzzle PuzzleLoader, stockfishPath string) Result {
 	state := newMenuState()
+	state.stockfishPath = stockfishPath
 	var game *localGameState
 	var puzzle *puzzleState
 	events := make(chan tcell.Event)
@@ -66,7 +68,15 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader) Result {
 		}
 		screen.Show()
 
+		var engineMoves <-chan engineResult
+		if game != nil {
+			engineMoves = game.engineResults
+		}
 		select {
+		case result := <-engineMoves:
+			if game != nil {
+				game.applyEngineResult(result)
+			}
 		case now := <-clockTicker.C:
 			if game != nil {
 				game.advanceClock(now)
@@ -86,6 +96,7 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader) Result {
 				if game != nil {
 					width, height := screen.Size()
 					if game.handleKey(event, width, height) {
+						game.closeStockfish()
 						game = nil
 						state.showMainMenu()
 					}
@@ -110,10 +121,18 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader) Result {
 					continue
 				}
 				if state.handleKey(event) {
-					if state.result == LocalGame {
+					if state.result == LocalGame || state.result == StockfishGame {
 						newGame := newLocalGameState(state.theme)
 						newGame.autoFlip = state.autoFlip
 						newGame.startClock(state.timeControl)
+						if state.result == StockfishGame {
+							if err := newGame.startStockfish(state.stockfishPath, state.stockfishColor, state.stockfishDifficulty); err != nil {
+								state.message = "Could not start Stockfish: " + err.Error()
+								state.showMainMenu()
+								state.result = Exit
+								continue
+							}
+						}
 						game = &newGame
 						state.result = Exit
 					} else if state.result == Puzzle {
@@ -143,10 +162,18 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader) Result {
 					continue
 				}
 				if state.handleMouse(event, width, height) {
-					if state.result == LocalGame {
+					if state.result == LocalGame || state.result == StockfishGame {
 						newGame := newLocalGameState(state.theme)
 						newGame.autoFlip = state.autoFlip
 						newGame.startClock(state.timeControl)
+						if state.result == StockfishGame {
+							if err := newGame.startStockfish(state.stockfishPath, state.stockfishColor, state.stockfishDifficulty); err != nil {
+								state.message = "Could not start Stockfish: " + err.Error()
+								state.showMainMenu()
+								state.result = Exit
+								continue
+							}
+						}
 						game = &newGame
 						state.result = Exit
 					} else if state.result == Puzzle {

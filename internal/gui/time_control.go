@@ -60,7 +60,11 @@ func (s *menuState) activateTimeControl() bool {
 		return false
 	}
 	s.timeControl = choice.control
-	s.result = LocalGame
+	if s.stockfishGame {
+		s.result = StockfishGame
+	} else {
+		s.result = LocalGame
+	}
 	return true
 }
 
@@ -110,7 +114,11 @@ func (s *menuState) startCustomTimeControl() bool {
 		increment: time.Duration(increment) * time.Second,
 		event:     "custom game",
 	}
-	s.result = LocalGame
+	if s.stockfishGame {
+		s.result = StockfishGame
+	} else {
+		s.result = LocalGame
+	}
 	return true
 }
 
@@ -119,7 +127,11 @@ func drawTimeControlMenu(screen tcell.Screen, state menuState) {
 	x := (width - 28) / 2
 	top := (height - 22) / 2
 	y := top + 3
-	drawCentered(screen, top, "Play > Local game", titleStyle)
+	title := "Play > Local game"
+	if state.stockfishGame {
+		title = "Play > Stockfish"
+	}
+	drawCentered(screen, top, title, titleStyle)
 	drawCentered(screen, top+1, "Please select a time control", mutedStyle)
 
 	choiceIndex := 0

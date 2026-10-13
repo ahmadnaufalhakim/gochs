@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"fmt"
 	"math/rand"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
@@ -17,6 +18,9 @@ const (
 	themeMenu
 	timeControlMenu
 	customTimeControlMenu
+	stockfishColorMenu
+	stockfishDifficultyMenu
+	stockfishUnavailable
 	comingSoon
 	exitConfirmation
 )
@@ -82,7 +86,22 @@ type menuState struct {
 	customFocus         customTimeField
 	customMessage       string
 	message             string
+	stockfishPath       string
+	stockfishColor      stockfishColor
+	stockfishDifficulty int
+	stockfishGame       bool
 }
+
+type stockfishColor uint8
+
+const (
+	stockfishWhite stockfishColor = iota
+	stockfishBlack
+	stockfishRandom
+	stockfishColorCount
+)
+
+var stockfishColorLabels = [stockfishColorCount]string{"Play as White", "Play as Black", "Play as Random"}
 
 type menuLayout struct {
 	x     int
@@ -210,6 +229,34 @@ func (s *menuState) handleKey(event *tcell.EventKey) bool {
 		}
 	case customTimeControlMenu:
 		return s.handleCustomTimeControlKey(event)
+	case stockfishColorMenu:
+		switch event.Key() {
+		case tcell.KeyUp:
+			s.stockfishColor = (s.stockfishColor + stockfishColorCount - 1) % stockfishColorCount
+		case tcell.KeyDown:
+			s.stockfishColor = (s.stockfishColor + 1) % stockfishColorCount
+		case tcell.KeyEnter:
+			s.page = stockfishDifficultyMenu
+		case tcell.KeyEsc:
+			s.page = playMenu
+		}
+	case stockfishDifficultyMenu:
+		switch event.Key() {
+		case tcell.KeyUp:
+			s.stockfishDifficulty = max(1, s.stockfishDifficulty-1)
+		case tcell.KeyDown:
+			s.stockfishDifficulty = min(8, s.stockfishDifficulty+1)
+		case tcell.KeyEnter:
+			s.page = timeControlMenu
+			s.timeControlSelected = 0
+			s.stockfishGame = true
+		case tcell.KeyEsc:
+			s.page = stockfishColorMenu
+		}
+	case stockfishUnavailable:
+		if event.Key() == tcell.KeyEnter || event.Key() == tcell.KeyEsc {
+			s.page = playMenu
+		}
 	case optionsMenu:
 		switch event.Key() {
 		case tcell.KeyUp:
@@ -417,11 +464,17 @@ func (s *menuState) activate(item menuItem) {
 func (s *menuState) activatePlayItem(item playMenuItem) {
 	switch item {
 	case localGame:
+		s.stockfishGame = false
 		s.page = timeControlMenu
 		s.timeControlSelected = 0
 	case playWithStockfish:
-		s.page = comingSoon
-		s.comingSoonLabel = playMenuLabels[item]
+		if s.stockfishPath == "" {
+			s.page = stockfishUnavailable
+			return
+		}
+		s.page = stockfishColorMenu
+		s.stockfishColor = stockfishWhite
+		s.stockfishDifficulty = 1
 	case back:
 		s.showMainMenu()
 	}
@@ -444,7 +497,7 @@ func draw(screen tcell.Screen, state menuState) {
 	case mainMenu:
 		drawMainMenu(screen, state)
 	case playMenu:
-		drawPlayMenu(screen, state.playSelected)
+		drawPlayMenu(screen, state)
 	case optionsMenu:
 		drawOptionsMenu(screen, state.optionsSelected, state.autoFlip)
 	case themeMenu:
@@ -453,6 +506,12 @@ func draw(screen tcell.Screen, state menuState) {
 		drawTimeControlMenu(screen, state)
 	case customTimeControlMenu:
 		drawCustomTimeControl(screen, state)
+	case stockfishColorMenu:
+		drawStockfishColorMenu(screen, state)
+	case stockfishDifficultyMenu:
+		drawStockfishDifficultyMenu(screen, state)
+	case stockfishUnavailable:
+		drawStockfishUnavailable(screen)
 	case comingSoon:
 		drawComingSoon(screen, state.comingSoonLabel)
 	case exitConfirmation:
@@ -491,19 +550,50 @@ func drawSplash(screen tcell.Screen, y int, splash []string) {
 	}
 }
 
-func drawPlayMenu(screen tcell.Screen, selected playMenuItem) {
+func drawPlayMenu(screen tcell.Screen, state menuState) {
 	width, height := screen.Size()
 	layout := simpleMenuLayout(width, height, playMenuLabels[:])
 
 	drawCentered(screen, layout.y-3, "Play", titleStyle)
 	for item, label := range playMenuLabels {
 		style := backgroundStyle
-		if playMenuItem(item) == selected {
+		if playMenuItem(item) == playWithStockfish && state.stockfishPath == "" {
+			style = mutedStyle
+		} else if playMenuItem(item) == state.playSelected {
 			style = selectedStyle
 		}
 		drawPaddedString(screen, layout.x, layout.y+item, layout.width, label, style)
 	}
 	drawCentered(screen, layout.y+int(playMenuItemCount)+1, "Up/Down to select  Enter to choose", mutedStyle)
+}
+
+func drawStockfishColorMenu(screen tcell.Screen, state menuState) {
+	width, height := screen.Size()
+	layout := simpleMenuLayout(width, height, stockfishColorLabels[:])
+	drawCentered(screen, layout.y-3, "Stockfish", titleStyle)
+	for color, label := range stockfishColorLabels {
+		style := backgroundStyle
+		if stockfishColor(color) == state.stockfishColor {
+			style = selectedStyle
+		}
+		drawPaddedString(screen, layout.x, layout.y+color, layout.width, label, style)
+	}
+	drawCentered(screen, layout.y+int(stockfishColorCount)+1, "Up/Down to select  Enter to choose", mutedStyle)
+}
+
+func drawStockfishDifficultyMenu(screen tcell.Screen, state menuState) {
+	_, height := screen.Size()
+	drawCentered(screen, height/2-3, "Stockfish difficulty", titleStyle)
+	drawCentered(screen, height/2-1, fmt.Sprintf("Level %d / 8", state.stockfishDifficulty), selectedStyle)
+	drawCentered(screen, height/2+2, "Up/Down to select  Enter to choose", mutedStyle)
+}
+
+func drawStockfishUnavailable(screen tcell.Screen) {
+	_, height := screen.Size()
+	drawCentered(screen, height/2-3, "Stockfish is not installed", titleStyle)
+	drawCentered(screen, height/2-1, "Install it with: sudo apt install stockfish", mutedStyle)
+	drawCentered(screen, height/2+1, "Then restart gochs", mutedStyle)
+	drawCentered(screen, height/2+3, "Press Enter or Esc to return", mutedStyle)
 }
 
 func drawOptionsMenu(screen tcell.Screen, selected optionsMenuItem, autoFlipEnabled bool) {

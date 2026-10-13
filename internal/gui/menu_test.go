@@ -189,8 +189,14 @@ func TestPlayMenuActivation(t *testing.T) {
 
 	state = menuState{page: playMenu, playSelected: playWithStockfish}
 	state.handleKey(keyEvent(tcell.KeyEnter, 0))
-	if state.page != comingSoon || state.comingSoonLabel != "Play with Stockfish" {
-		t.Errorf("Stockfish activation = %#v, want coming-soon page", state)
+	if state.page != stockfishUnavailable {
+		t.Errorf("unavailable Stockfish activation = %#v, want unavailable page", state)
+	}
+
+	state = menuState{page: playMenu, playSelected: playWithStockfish, stockfishPath: "/usr/games/stockfish"}
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if state.page != stockfishColorMenu || state.stockfishDifficulty != 1 {
+		t.Errorf("Stockfish activation = %#v, want color menu", state)
 	}
 
 	state = menuState{page: playMenu, playSelected: back}

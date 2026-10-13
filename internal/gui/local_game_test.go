@@ -59,6 +59,18 @@ func TestPGNResultAndTermination(t *testing.T) {
 	}
 }
 
+func TestStockfishPGNIdentifiesComputerColor(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.computerColor = new(chess.PieceColor)
+	*game.computerColor = chess.Black
+	game.engineDifficulty = 3
+
+	pgn := game.pgnGame()
+	if pgn.White != "White" || pgn.Black != "Stockfish level 3" {
+		t.Errorf("PGN players = %q, %q", pgn.White, pgn.Black)
+	}
+}
+
 func TestSavePGNWritesXDGDataFile(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", directory)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ahmadnaufalhakim/gochs/internal/engine"
 	"github.com/ahmadnaufalhakim/gochs/internal/entity"
 	"github.com/ahmadnaufalhakim/gochs/internal/gui"
 	"github.com/ahmadnaufalhakim/gochs/internal/repository"
@@ -13,7 +14,8 @@ import (
 func Run() error {
 	loadPuzzle, closeDatabase := puzzleLoader()
 	defer closeDatabase()
-	result, err := gui.Run(loadPuzzle)
+	stockfishPath, _ := engine.FindStockfish()
+	result, err := gui.Run(loadPuzzle, stockfishPath)
 	if err != nil {
 		return err
 	}

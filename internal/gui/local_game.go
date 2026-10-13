@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
+	"github.com/ahmadnaufalhakim/gochs/internal/engine"
 	"github.com/ahmadnaufalhakim/gochs/internal/pgn"
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
@@ -57,6 +58,12 @@ type localGameState struct {
 	hoveredSaveClocks bool
 	exportMessage     string
 	resignedBy        *chess.PieceColor
+	computerColor     *chess.PieceColor
+	stockfish         *engine.Client
+	engineResults     chan engineResult
+	engineDifficulty  int
+	engineThinking    bool
+	engineRandom      func(int) int
 }
 
 type boardLayout struct {
@@ -84,6 +91,9 @@ func (g *localGameState) handleKey(event *tcell.EventKey, width, height int) boo
 	}
 	if g.hasTerminalResult() {
 		return event.Key() == tcell.KeyEsc
+	}
+	if g.isComputerTurn() {
+		return false
 	}
 
 	if len(g.promotionChoices) != 0 {
@@ -140,6 +150,9 @@ func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int)
 	}
 	if g.hasTerminalResult() {
 		g.handleReviewMouse(event, layout)
+		return
+	}
+	if g.isComputerTurn() {
 		return
 	}
 	if event.Buttons() == tcell.ButtonNone {
@@ -419,6 +432,7 @@ func (g *localGameState) makeMove(move chess.Move) {
 	if g.autoFlip {
 		g.perspective = g.board.ColorToMove
 	}
+	g.startEngineTurn()
 }
 
 func (g *localGameState) flipBoard() {
@@ -501,13 +515,24 @@ func (g localGameState) hasTerminalResult() bool {
 }
 
 func (g localGameState) pgnGame() pgn.Game {
+	white := "White"
+	black := "Black"
+	if g.computerColor != nil {
+		name := fmt.Sprintf("Stockfish level %d", g.engineDifficulty)
+		if *g.computerColor == chess.White {
+			white = name
+		} else {
+			black = name
+		}
+	}
+
 	return pgn.Game{
 		Event:       g.timeControl.event,
 		Site:        "https://github.com/ahmadnaufalhakim/gochs",
 		Date:        g.startedAt,
 		Round:       "-",
-		White:       "White",
-		Black:       "Black",
+		White:       white,
+		Black:       black,
 		Result:      g.pgnResult(),
 		Variant:     "Standard",
 		TimeControl: g.timeControl.pgnValue(),
@@ -1027,7 +1052,9 @@ func drawGameInput(screen tcell.Screen, game localGameState, layout boardLayout)
 	}
 	drawUCIInputBorder(screen, x, y)
 	drawPaddedString(screen, x+1, y+1, uciInputBoxWidth-2, game.uciInput+"_", backgroundStyle)
-	if game.message != "" {
+	if game.stockfishStatus() != "" {
+		drawString(screen, x, y+4, game.stockfishStatus(), mutedStyle)
+	} else if game.message != "" {
 		drawString(screen, x, y+4, game.message, mutedStyle)
 	}
 	drawString(screen, x, y+5, "Esc: clear selection or return to menu", mutedStyle)
