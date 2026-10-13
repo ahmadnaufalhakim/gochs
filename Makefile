@@ -12,7 +12,7 @@ LDFLAGS := -ldflags "\
     -X main.date=$(BUILD_DATE) \
     -X 'main.author=$(GIT_AUTHOR)'"
 
-.PHONY: dev download build run test tidy lint migrate migrate-new
+.PHONY: dev download build run test tidy lint migrate migrate-new stockfish-cli
 
 dev:
 	@command -v air >/dev/null 2>&1 || { echo "Missing: air - install with 'go install github.com/air-verse/air@latest'"; exit 1; }
@@ -24,6 +24,9 @@ build:
 
 run:
 	go run ./cmd/gochs
+
+stockfish-cli:
+	go run ./cmd/gochs-stockfish
 
 test:
 	go test ./... -v
