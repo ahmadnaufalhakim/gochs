@@ -56,12 +56,14 @@ func (b Board) ParseSAN(input string) (Move, error) {
 }
 
 func (b Board) sanDisambiguation(move Move, legalMoves []Move, pieceType PieceType) string {
+	hasAlternative := false
 	sameFile := false
 	sameRank := false
 	for _, candidate := range legalMoves {
 		if candidate == move || candidate.To() != move.To() || b.PieceAt(candidate.From()).Type != pieceType {
 			continue
 		}
+		hasAlternative = true
 		if candidate.From().File() == move.From().File() {
 			sameFile = true
 		}
@@ -69,7 +71,7 @@ func (b Board) sanDisambiguation(move Move, legalMoves []Move, pieceType PieceTy
 			sameRank = true
 		}
 	}
-	if !sameFile && !sameRank {
+	if !hasAlternative {
 		return ""
 	}
 	if !sameFile {

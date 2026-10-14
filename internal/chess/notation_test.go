@@ -46,6 +46,16 @@ func TestSAN(t *testing.T) {
 		requireSAN(t, &board, "b1c3", "Nbc3")
 	})
 
+	t.Run("disambiguation with different files and ranks", func(t *testing.T) {
+		board := Board{ColorToMove: White, FullmoveNumber: 1}
+		board.SetPieceAt(square(t, "a1"), Piece{Color: White, Type: King})
+		board.SetPieceAt(square(t, "a8"), Piece{Color: Black, Type: King})
+		board.SetPieceAt(square(t, "c4"), Piece{Color: White, Type: Queen})
+		board.SetPieceAt(square(t, "g7"), Piece{Color: White, Type: Queen})
+		board.SetPieceAt(square(t, "g4"), Piece{Color: Black, Type: Rook})
+		requireSAN(t, &board, "c4g4", "Qcxg4")
+	})
+
 	t.Run("castling", func(t *testing.T) {
 		board := Board{ColorToMove: White, FullmoveNumber: 1}
 		board.SetPieceAt(square(t, "e1"), Piece{Color: White, Type: King})
