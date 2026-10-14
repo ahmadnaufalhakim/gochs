@@ -206,6 +206,22 @@ func TestPlayMenuActivation(t *testing.T) {
 	}
 }
 
+func TestStockfishColorMenuMouseSelection(t *testing.T) {
+	const width, height = 80, 24
+	state := menuState{page: stockfishColorMenu}
+	layout := simpleMenuLayout(width, height, stockfishColorLabels[:])
+
+	state.handleMouse(tcell.NewEventMouse(layout.x, layout.y+int(stockfishBlack), tcell.ButtonNone, tcell.ModNone), width, height)
+	if state.stockfishColor != stockfishBlack {
+		t.Errorf("hovered color = %d, want black", state.stockfishColor)
+	}
+
+	state.handleMouse(tcell.NewEventMouse(layout.x, layout.y+int(stockfishRandom), tcell.Button1, tcell.ModNone), width, height)
+	if state.stockfishColor != stockfishRandom || state.page != stockfishDifficultyMenu {
+		t.Errorf("clicked color state = %#v", state)
+	}
+}
+
 func TestPuzzleMenuActivation(t *testing.T) {
 	state := menuState{selected: puzzle}
 	if !state.handleKey(keyEvent(tcell.KeyEnter, 0)) {

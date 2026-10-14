@@ -360,6 +360,14 @@ func (s *menuState) handleMouse(event *tcell.EventMouse, width, height int) bool
 			s.page = timeControlMenu
 			s.customMessage = ""
 		}
+	case stockfishColorMenu:
+		color, ok := stockfishColorAt(x, y, width, height)
+		if ok {
+			s.stockfishColor = color
+			if event.Buttons() == tcell.Button1 {
+				s.page = stockfishDifficultyMenu
+			}
+		}
 	case optionsMenu:
 		item, ok := optionsMenuItemAt(x, y, width, height, s.autoFlip)
 		if ok {
@@ -570,7 +578,8 @@ func drawPlayMenu(screen tcell.Screen, state menuState) {
 func drawStockfishColorMenu(screen tcell.Screen, state menuState) {
 	width, height := screen.Size()
 	layout := simpleMenuLayout(width, height, stockfishColorLabels[:])
-	drawCentered(screen, layout.y-3, "Stockfish", titleStyle)
+	drawCentered(screen, layout.y-3, "Play > Stockfish", titleStyle)
+	drawCentered(screen, layout.y-2, "Please select color to move", mutedStyle)
 	for color, label := range stockfishColorLabels {
 		style := backgroundStyle
 		if stockfishColor(color) == state.stockfishColor {
@@ -583,8 +592,9 @@ func drawStockfishColorMenu(screen tcell.Screen, state menuState) {
 
 func drawStockfishDifficultyMenu(screen tcell.Screen, state menuState) {
 	_, height := screen.Size()
-	drawCentered(screen, height/2-3, "Stockfish difficulty", titleStyle)
-	drawCentered(screen, height/2-1, fmt.Sprintf("Level %d / 8", state.stockfishDifficulty), selectedStyle)
+	drawCentered(screen, height/2-4, "Play > Stockfish", titleStyle)
+	drawCentered(screen, height/2-2, "Please select the difficulty", mutedStyle)
+	drawCentered(screen, height/2, fmt.Sprintf("Level %d / 8", state.stockfishDifficulty), selectedStyle)
 	drawCentered(screen, height/2+2, "Up/Down to select  Enter to choose", mutedStyle)
 }
 
@@ -713,6 +723,21 @@ func playMenuItemAt(x, y, width, height int) (playMenuItem, bool) {
 	for item := range playMenuItemCount {
 		if y == layout.y+int(item) {
 			return item, true
+		}
+	}
+
+	return 0, false
+}
+
+func stockfishColorAt(x, y, width, height int) (stockfishColor, bool) {
+	layout := simpleMenuLayout(width, height, stockfishColorLabels[:])
+	if x < layout.x || x >= layout.x+layout.width {
+		return 0, false
+	}
+
+	for color := range stockfishColorCount {
+		if y == layout.y+int(color) {
+			return color, true
 		}
 	}
 
