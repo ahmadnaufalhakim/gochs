@@ -42,6 +42,86 @@ func TestMoveAddsIncrement(t *testing.T) {
 	}
 }
 
+func TestMaterialIndicator(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.board.ClearSquare(guiSquare(t, "a7"))
+	if got := materialIndicator(game.board, chess.White); got != "♙ +1" {
+		t.Errorf("white material = %q, want ♙ +1", got)
+	}
+	if got := materialIndicator(game.board, chess.Black); got != "" {
+		t.Errorf("black material = %q, want empty", got)
+	}
+
+	game.board.Reset()
+	game.board.ClearSquare(guiSquare(t, "b1"))
+	if got := materialIndicator(game.board, chess.Black); got != "♘ +3" {
+		t.Errorf("black material = %q, want ♘ +3", got)
+	}
+}
+
+func TestMaterialIndicatorTracksPromotions(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.board.ClearSquare(guiSquare(t, "a7"))
+	game.board.SetPieceAt(guiSquare(t, "a5"), chess.Piece{Color: chess.Black, Type: chess.Queen})
+
+	if got := materialIndicator(game.board, chess.White); got != "♙" {
+		t.Errorf("white promotion delta = %q, want ♙", got)
+	}
+	if got := materialIndicator(game.board, chess.Black); got != "♕ +8" {
+		t.Errorf("black promotion delta = %q, want ♕ +8", got)
+	}
+
+	game.board.Reset()
+	game.board.ClearSquare(guiSquare(t, "a2"))
+	game.board.SetPieceAt(guiSquare(t, "a4"), chess.Piece{Color: chess.White, Type: chess.Knight})
+	if got := materialIndicator(game.board, chess.White); got != "♘ +2" {
+		t.Errorf("white underpromotion delta = %q, want ♘ +2", got)
+	}
+	if got := materialIndicator(game.board, chess.Black); got != "♙" {
+		t.Errorf("black underpromotion delta = %q, want ♙", got)
+	}
+}
+
+func TestMaterialIndicatorShowsBothSidesDeltas(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.board.ClearSquare(guiSquare(t, "a7"))
+	game.board.ClearSquare(guiSquare(t, "b8"))
+	game.board.ClearSquare(guiSquare(t, "d1"))
+
+	if got := materialIndicator(game.board, chess.White); got != "♘♙" {
+		t.Errorf("white material = %q, want ♘♙", got)
+	}
+	if got := materialIndicator(game.board, chess.Black); got != "♕ +5" {
+		t.Errorf("black material = %q, want ♕ +5", got)
+	}
+}
+
+func TestMaterialIndicatorCancelsMatchingCaptures(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.board.ClearSquare(guiSquare(t, "a7"))
+	game.board.ClearSquare(guiSquare(t, "a2"))
+
+	if got := materialIndicator(game.board, chess.White); got != "" {
+		t.Errorf("white matching captures = %q, want empty", got)
+	}
+	if got := materialIndicator(game.board, chess.Black); got != "" {
+		t.Errorf("black matching captures = %q, want empty", got)
+	}
+}
+
+func TestMaterialIndicatorUsesDisplayedReplayBoard(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	previous := game.board
+	previous.ClearSquare(guiSquare(t, "a7"))
+	game.positions = []chess.Board{previous, game.board}
+	game.viewPly = 0
+	game.terminalTitle = "Stalemate · ½-½"
+
+	if got := materialIndicator(game.boardForDisplay(), chess.White); got != "♙ +1" {
+		t.Errorf("replay material = %q, want ♙ +1", got)
+	}
+}
+
 func TestPGNResultAndTermination(t *testing.T) {
 	game := newLocalGameState(chess.WOOD)
 	game.timeControl = timeControl{initial: time.Minute, event: "bullet game"}

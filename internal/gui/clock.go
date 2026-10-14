@@ -2,10 +2,13 @@ package gui
 
 import (
 	"fmt"
+	"math/bits"
+	"strings"
 	"time"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	"github.com/gdamore/tcell/v2"
+	"github.com/mattn/go-runewidth"
 )
 
 func (g *localGameState) startClock(control timeControl) {
@@ -44,17 +47,75 @@ func (g *localGameState) advanceClock(now time.Time) {
 }
 
 func drawClocks(screen tcell.Screen, game localGameState, layout boardLayout) {
-	if !game.timeControl.isTimed() {
-		return
-	}
+	board := game.boardForDisplay()
 	for color := range chess.PieceColorCount {
 		style := backgroundStyle
-		if !game.hasTerminalResult() && chess.PieceColor(color) == game.board.ColorToMove {
+		if game.timeControl.isTimed() && !game.hasTerminalResult() && chess.PieceColor(color) == game.board.ColorToMove {
 			style = selectedStyle
 		}
-		label := fmt.Sprintf("%-5s %s", chess.PieceColor(color), formatClock(game.clockRemaining[color]))
-		drawString(screen, moveHistoryBoxX(layout), layout.y+9+int(color), label, style)
+		player := chess.PieceColor(color)
+		label := fmt.Sprintf("%-5s", player)
+		if game.timeControl.isTimed() {
+			label += " " + formatClock(game.clockRemaining[color])
+		}
+		x := moveHistoryBoxX(layout)
+		drawString(screen, x, layout.y+9+int(color), label, style)
+		if material := materialIndicator(board, player); material != "" {
+			drawString(screen, x+runewidth.StringWidth(label)+1, layout.y+9+int(color), material, backgroundStyle)
+		}
 	}
+}
+
+func materialIndicator(board chess.Board, color chess.PieceColor) string {
+	deltas := materialDeltas(board)
+	var indicator strings.Builder
+	for _, pieceType := range []chess.PieceType{chess.Queen, chess.Rook, chess.Bishop, chess.Knight, chess.Pawn} {
+		count := deltas[color][pieceType]
+		if count == 0 {
+			continue
+		}
+		indicator.WriteString(chess.PieceLabel[chess.White][pieceType])
+		if count > 1 {
+			fmt.Fprintf(&indicator, "×%d", count)
+		}
+	}
+
+	advantage := materialValue(board, color) - materialValue(board, color.Opponent())
+	if advantage > 0 {
+		fmt.Fprintf(&indicator, " +%d", advantage)
+	}
+
+	return indicator.String()
+}
+
+func materialDeltas(board chess.Board) [chess.PieceColorCount][chess.PieceTypeCount]int {
+	var deltas [chess.PieceColorCount][chess.PieceTypeCount]int
+	for color := range chess.PieceColorCount {
+		for pieceType := chess.Pawn; pieceType < chess.King; pieceType++ {
+			difference := bits.OnesCount64(uint64(board.Pieces[color][pieceType])) - bits.OnesCount64(uint64(board.Pieces[chess.PieceColor(color).Opponent()][pieceType]))
+			if difference > 0 {
+				deltas[color][pieceType] = difference
+			}
+		}
+	}
+
+	return deltas
+}
+
+func materialValue(board chess.Board, color chess.PieceColor) int {
+	values := map[chess.PieceType]int{
+		chess.Pawn:   1,
+		chess.Knight: 3,
+		chess.Bishop: 3,
+		chess.Rook:   5,
+		chess.Queen:  9,
+	}
+
+	value := 0
+	for pieceType, points := range values {
+		value += bits.OnesCount64(uint64(board.Pieces[color][pieceType])) * points
+	}
+	return value
 }
 
 func formatClock(remaining time.Duration) string {
