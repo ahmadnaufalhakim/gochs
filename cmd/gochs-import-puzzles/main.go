@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/repository"
+	"github.com/ahmadnaufalhakim/gochs/internal/storage"
 )
 
 const importBatchSize = 10_000
@@ -30,9 +31,18 @@ type themeMetadata struct {
 }
 
 func main() {
+	if _, err := storage.EnsureDataDirectory(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	defaultDatabasePath, err := storage.PuzzleDatabasePath()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	inputPath := flag.String("input", "data/puzzle/lichess_db_puzzle.csv", "path to the Lichess puzzle CSV")
 	themesPath := flag.String("themes", "data/puzzle/themes.json", "path to generated theme metadata")
-	databasePath := flag.String("database", "data/puzzle/puzzles.db", "path to write the SQLite puzzle database")
+	databasePath := flag.String("database", defaultDatabasePath, "path to write the SQLite puzzle database")
 	flag.Parse()
 
 	if err := run(*inputPath, *themesPath, *databasePath, os.Stderr); err != nil {
