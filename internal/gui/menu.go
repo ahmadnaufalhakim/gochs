@@ -3,8 +3,11 @@ package gui
 import (
 	"fmt"
 	"math/rand"
+	"strings"
+	"time"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
+	"github.com/ahmadnaufalhakim/gochs/internal/entity"
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
 )
@@ -21,6 +24,10 @@ const (
 	stockfishColorMenu
 	stockfishDifficultyMenu
 	stockfishUnavailable
+	lichessMenu
+	lichessToken
+	lichessSyncConfirmation
+	lichessLoading
 	comingSoon
 	exitConfirmation
 )
@@ -30,6 +37,7 @@ type menuItem uint8
 const (
 	play menuItem = iota
 	puzzle
+	lichess
 	options
 	credits
 	exit
@@ -39,6 +47,7 @@ const (
 var menuLabels = [menuItemCount]string{
 	"Play",
 	"Puzzle",
+	"Lichess",
 	"Options",
 	"Credits",
 	"Exit",
@@ -90,7 +99,22 @@ type menuState struct {
 	stockfishColor      stockfishColor
 	stockfishDifficulty int
 	stockfishGame       bool
+	lichessAccount      *entity.LichessAccount
+	lichessSelected     int
+	lichessToken        string
+	lichessMessage      string
+	lichessAction       lichessAction
 }
+
+type lichessAction uint8
+
+const (
+	lichessNoAction lichessAction = iota
+	lichessLoad
+	lichessConnect
+	lichessDisconnect
+	lichessSyncRating
+)
 
 type stockfishColor uint8
 
@@ -257,6 +281,22 @@ func (s *menuState) handleKey(event *tcell.EventKey) bool {
 		if event.Key() == tcell.KeyEnter || event.Key() == tcell.KeyEsc {
 			s.page = playMenu
 		}
+	case lichessMenu:
+		s.handleLichessMenuKey(event)
+	case lichessToken:
+		s.handleLichessTokenKey(event)
+	case lichessSyncConfirmation:
+		switch event.Key() {
+		case tcell.KeyEnter:
+			s.page = lichessLoading
+			s.lichessAction = lichessSyncRating
+		case tcell.KeyEsc:
+			s.page = lichessMenu
+		}
+	case lichessLoading:
+		if event.Key() == tcell.KeyEsc {
+			s.page = lichessMenu
+		}
 	case optionsMenu:
 		switch event.Key() {
 		case tcell.KeyUp:
@@ -368,6 +408,14 @@ func (s *menuState) handleMouse(event *tcell.EventMouse, width, height int) bool
 				s.page = stockfishDifficultyMenu
 			}
 		}
+	case lichessMenu:
+		item, ok := lichessMenuItemAt(x, y, width, height, s.lichessAccount != nil)
+		if ok {
+			s.lichessSelected = item
+			if event.Buttons() == tcell.Button1 {
+				s.activateLichessMenuItem()
+			}
+		}
 	case optionsMenu:
 		item, ok := optionsMenuItemAt(x, y, width, height, s.autoFlip)
 		if ok {
@@ -464,6 +512,12 @@ func (s *menuState) activate(item menuItem) {
 		s.result = Puzzle
 		return
 	}
+	if item == lichess {
+		s.page = lichessLoading
+		s.lichessAction = lichessLoad
+		s.lichessMessage = ""
+		return
+	}
 
 	s.page = comingSoon
 	s.comingSoonLabel = menuLabels[item]
@@ -520,10 +574,84 @@ func draw(screen tcell.Screen, state menuState) {
 		drawStockfishDifficultyMenu(screen, state)
 	case stockfishUnavailable:
 		drawStockfishUnavailable(screen)
+	case lichessMenu:
+		drawLichessMenu(screen, state)
+	case lichessToken:
+		drawLichessToken(screen, state)
+	case lichessSyncConfirmation:
+		drawLichessSyncConfirmation(screen, state)
+	case lichessLoading:
+		drawLichessLoading(screen)
 	case comingSoon:
 		drawComingSoon(screen, state.comingSoonLabel)
 	case exitConfirmation:
 		drawExitConfirmation(screen, state.confirmExit)
+	}
+}
+
+func (s *menuState) handleLichessMenuKey(event *tcell.EventKey) {
+	count := 2
+	if s.lichessAccount != nil {
+		count = 4
+	}
+	switch event.Key() {
+	case tcell.KeyUp:
+		s.lichessSelected = (s.lichessSelected + count - 1) % count
+	case tcell.KeyDown:
+		s.lichessSelected = (s.lichessSelected + 1) % count
+	case tcell.KeyEnter:
+		s.activateLichessMenuItem()
+	case tcell.KeyEsc:
+		s.showMainMenu()
+	}
+}
+
+func (s *menuState) activateLichessMenuItem() {
+	if s.lichessAccount == nil {
+		if s.lichessSelected == 0 {
+			s.page = lichessToken
+			s.lichessMessage = ""
+		} else {
+			s.showMainMenu()
+		}
+		return
+	}
+	switch s.lichessSelected {
+	case 0:
+		s.page = lichessLoading
+		s.lichessAction = lichessLoad
+		s.lichessMessage = ""
+	case 1:
+		s.page = lichessLoading
+		s.lichessAction = lichessDisconnect
+		s.lichessMessage = ""
+	case 2:
+		s.page = lichessSyncConfirmation
+	case 3:
+		s.showMainMenu()
+	}
+}
+
+func (s *menuState) handleLichessTokenKey(event *tcell.EventKey) {
+	switch event.Key() {
+	case tcell.KeyEsc:
+		s.lichessToken = ""
+		s.page = lichessMenu
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		if len(s.lichessToken) > 0 {
+			s.lichessToken = s.lichessToken[:len(s.lichessToken)-1]
+		}
+	case tcell.KeyEnter:
+		if s.lichessToken == "" {
+			s.lichessMessage = "Enter a Lichess Personal API Token"
+			return
+		}
+		s.page = lichessLoading
+		s.lichessAction = lichessConnect
+	case tcell.KeyRune:
+		if len(s.lichessToken) < 512 && event.Rune() >= 0x20 && event.Rune() <= 0x7e {
+			s.lichessToken += string(event.Rune())
+		}
 	}
 }
 
@@ -604,6 +732,123 @@ func drawStockfishUnavailable(screen tcell.Screen) {
 	drawCentered(screen, height/2-1, "Install it with: sudo apt install stockfish", mutedStyle)
 	drawCentered(screen, height/2+1, "Then restart gochs", mutedStyle)
 	drawCentered(screen, height/2+3, "Press Enter or Esc to return", mutedStyle)
+}
+
+func drawLichessMenu(screen tcell.Screen, state menuState) {
+	_, height := screen.Size()
+	if state.lichessAccount == nil {
+		labels := []string{"Connect with token", "Back"}
+		drawCentered(screen, height/2-5, "Lichess", titleStyle)
+		drawCentered(screen, height/2-3, "Connect with a Lichess Personal API Token", mutedStyle)
+		drawLichessActions(screen, labels, state.lichessSelected, height/2)
+		if state.lichessMessage != "" {
+			drawCentered(screen, height/2+4, state.lichessMessage, mutedStyle)
+		}
+		return
+	}
+
+	account := state.lichessAccount
+	name := account.Username
+	if account.Title != "" {
+		name = account.Title + " " + name
+	}
+	if account.Online {
+		name += "  Online"
+	}
+	drawCentered(screen, height/2-9, "Lichess", titleStyle)
+	drawCentered(screen, height/2-7, name, backgroundStyle)
+	if account.Patron {
+		drawCentered(screen, height/2-6, "Patron", mutedStyle)
+	}
+	drawCentered(screen, height/2-4, fmt.Sprintf("Bullet     %s       Blitz      %s", ratingLabel(account.Bullet), ratingLabel(account.Blitz)), backgroundStyle)
+	drawCentered(screen, height/2-3, fmt.Sprintf("Rapid      %s       Classical  %s", ratingLabel(account.Rapid), ratingLabel(account.Classical)), backgroundStyle)
+	drawCentered(screen, height/2-2, fmt.Sprintf("Puzzle     %s", ratingLabel(account.Puzzle)), backgroundStyle)
+	drawCentered(screen, height/2, fmt.Sprintf("Games      %d       %d W / %d D / %d L", account.Games, account.Wins, account.Draws, account.Losses), backgroundStyle)
+	drawCentered(screen, height/2+1, fmt.Sprintf("Play time  %s       Member since %s", durationLabel(account.PlayTime), dateLabel(account.MemberSince)), backgroundStyle)
+	labels := []string{"Refresh", "Disconnect", "Sync puzzle rating", "Back"}
+	drawLichessActions(screen, labels, state.lichessSelected, height/2+3)
+	if account.FromEnvironment {
+		drawCentered(screen, height/2+7, "Using GOCHS_LICHESS_TOKEN", mutedStyle)
+	} else if state.lichessMessage != "" {
+		drawCentered(screen, height/2+7, state.lichessMessage, mutedStyle)
+	}
+}
+
+func drawLichessActions(screen tcell.Screen, labels []string, selected, y int) {
+	width, _ := screen.Size()
+	layout := simpleMenuLayoutAt(width, y, labels)
+	for index, label := range labels {
+		style := backgroundStyle
+		if index == selected {
+			style = selectedStyle
+		}
+		drawPaddedString(screen, layout.x, y+index, layout.width, label, style)
+	}
+}
+
+func drawLichessToken(screen tcell.Screen, state menuState) {
+	_, height := screen.Size()
+	drawCentered(screen, height/2-4, "Lichess > Connect", titleStyle)
+	drawCentered(screen, height/2-2, "Paste your Lichess Personal API Token:", mutedStyle)
+	drawCentered(screen, height/2, "["+maskedToken(state.lichessToken)+"]", selectedStyle)
+	drawCentered(screen, height/2+2, "Enter to connect  Esc to cancel", mutedStyle)
+	if state.lichessMessage != "" {
+		drawCentered(screen, height/2+4, state.lichessMessage, mutedStyle)
+	}
+}
+
+func drawLichessSyncConfirmation(screen tcell.Screen, state menuState) {
+	_, height := screen.Size()
+	drawCentered(screen, height/2-4, "Sync Offline Puzzle Rating", titleStyle)
+	if state.lichessAccount == nil {
+		drawCentered(screen, height/2, "No Lichess account is available", mutedStyle)
+		return
+	}
+	drawCentered(screen, height/2-2, fmt.Sprintf("Lichess Puzzle rating: %d", state.lichessAccount.Puzzle), backgroundStyle)
+	drawCentered(screen, height/2, "This sets your offline rating to the Lichess value.", mutedStyle)
+	drawCentered(screen, height/2+1, "Puzzle history remains.", mutedStyle)
+	drawCentered(screen, height/2+3, "Enter to sync  Esc to cancel", selectedStyle)
+}
+
+func maskedToken(token string) string {
+	const maximumVisibleCharacters = 32
+	if len(token) <= maximumVisibleCharacters {
+		return strings.Repeat("*", len(token))
+	}
+	return strings.Repeat("*", maximumVisibleCharacters) + "..."
+}
+
+func drawLichessLoading(screen tcell.Screen) {
+	_, height := screen.Size()
+	drawCentered(screen, height/2-1, "Lichess", titleStyle)
+	drawCentered(screen, height/2+1, "Contacting Lichess...", mutedStyle)
+	drawCentered(screen, height/2+3, "Esc to cancel", mutedStyle)
+}
+
+func ratingLabel(rating int) string {
+	if rating == 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%d", rating)
+}
+
+func durationLabel(duration time.Duration) string {
+	if duration <= 0 {
+		return "-"
+	}
+	days := int(duration.Hours()) / 24
+	hours := int(duration.Hours()) % 24
+	if days > 0 {
+		return fmt.Sprintf("%dd %dh", days, hours)
+	}
+	return fmt.Sprintf("%dh", hours)
+}
+
+func dateLabel(date time.Time) string {
+	if date.IsZero() {
+		return "-"
+	}
+	return date.Local().Format("2006-01-02")
 }
 
 func drawOptionsMenu(screen tcell.Screen, selected optionsMenuItem, autoFlipEnabled bool) {
@@ -711,6 +956,27 @@ func menuItemAt(x, y, width, height, splashHeight int) (menuItem, bool) {
 		}
 	}
 
+	return 0, false
+}
+
+func lichessMenuItemAt(x, y, width, height int, connected bool) (int, bool) {
+	labels := []string{"Connect with token", "Back"}
+	if connected {
+		labels = []string{"Refresh", "Disconnect", "Sync puzzle rating", "Back"}
+	}
+	menuY := height / 2
+	if connected {
+		menuY = height/2 + 3
+	}
+	layout := simpleMenuLayoutAt(width, menuY, labels)
+	if x < layout.x || x >= layout.x+layout.width {
+		return 0, false
+	}
+	for item := range labels {
+		if y == layout.y+item {
+			return item, true
+		}
+	}
 	return 0, false
 }
 

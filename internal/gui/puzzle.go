@@ -41,6 +41,8 @@ const (
 
 type puzzleState struct {
 	puzzle           entity.Puzzle
+	recordAttempt    PuzzleAttemptRecorder
+	ratingResult     *entity.TrainingResult
 	board            chess.Board
 	theme            chess.ColorTheme
 	solverColor      chess.PieceColor
@@ -74,6 +76,10 @@ type puzzleState struct {
 }
 
 func newPuzzleState(puzzle entity.Puzzle, theme chess.ColorTheme, now time.Time) (puzzleState, error) {
+	return newPuzzleStateWithRecorder(puzzle, nil, theme, now)
+}
+
+func newPuzzleStateWithRecorder(puzzle entity.Puzzle, recordAttempt PuzzleAttemptRecorder, theme chess.ColorTheme, now time.Time) (puzzleState, error) {
 	if len(puzzle.Moves) < 2 {
 		return puzzleState{}, fmt.Errorf("puzzle %s has fewer than two moves", puzzle.ID)
 	}
@@ -83,6 +89,7 @@ func newPuzzleState(puzzle entity.Puzzle, theme chess.ColorTheme, now time.Time)
 	}
 	return puzzleState{
 		puzzle:          puzzle,
+		recordAttempt:   recordAttempt,
 		board:           board,
 		theme:           theme,
 		solverColor:     board.ColorToMove.Opponent(),
@@ -203,6 +210,7 @@ func (p *puzzleState) handleMouse(event *tcell.EventMouse, width, height int) pu
 			return puzzleStay
 		}
 		if p.helpAvailable() && puzzleHintButtonAt(x, y, layout) {
+			p.recordOutcome(entity.PuzzleFailed)
 			p.selectedSource = nil
 			p.hoveredSquare = nil
 			if p.hintMoveIndex != p.nextSolutionMove {
@@ -213,6 +221,7 @@ func (p *puzzleState) handleMouse(event *tcell.EventMouse, width, height int) pu
 			return puzzleStay
 		}
 		if p.helpAvailable() && puzzleSolutionButtonAt(x, y, layout) {
+			p.recordOutcome(entity.PuzzleFailed)
 			p.viewSolution()
 			return puzzleStay
 		}
@@ -352,6 +361,7 @@ func (p *puzzleState) submitMove(move chess.Move, now time.Time) {
 	p.hasLastMove = true
 	p.clearMoveInput()
 	p.message = "That's not the move! Try again.."
+	p.recordOutcome(entity.PuzzleFailed)
 	p.phase = puzzleWrongMove
 	p.phaseDeadline = now.Add(puzzleWrongDelay)
 }
@@ -394,6 +404,7 @@ func (p *puzzleState) applyRecordedMove(move chess.Move) {
 }
 
 func (p *puzzleState) viewSolution() {
+	p.recordOutcome(entity.PuzzleFailed)
 	p.applyRecordedMove(p.puzzle.Moves[p.nextSolutionMove])
 	p.nextSolutionMove++
 	shownPly := len(p.moves)
@@ -407,9 +418,22 @@ func (p *puzzleState) viewSolution() {
 }
 
 func (p *puzzleState) finishSolved() {
+	p.recordOutcome(entity.PuzzleSolved)
 	p.phase = puzzleSolved
 	p.viewPly = len(p.moves)
 	p.clearMoveInput()
+}
+
+func (p *puzzleState) recordOutcome(outcome entity.PuzzleOutcome) {
+	if p.ratingResult != nil || p.recordAttempt == nil {
+		return
+	}
+	result, err := p.recordAttempt(p.puzzle, outcome)
+	if err != nil {
+		p.message = "Could not update offline rating: " + err.Error()
+		return
+	}
+	p.ratingResult = &result
 }
 
 func (p *puzzleState) clearMoveInput() {
@@ -703,6 +727,9 @@ func drawPuzzleControls(screen tcell.Screen, puzzle puzzleState, layout boardLay
 		drawPuzzleButton(screen, x, layout.y+8, "[🔄] Flip board", puzzle.hoveredFlip)
 	}
 	drawString(screen, x, layout.y+9, fmt.Sprintf("Rating: %d", puzzle.puzzle.Rating), mutedStyle)
+	if result := puzzle.ratingResult; result != nil && result.Rated {
+		drawString(screen, x, layout.y+10, fmt.Sprintf("Offline: %d (%+d)", result.After, result.Change), mutedStyle)
+	}
 }
 
 func drawPuzzleButton(screen tcell.Screen, x, y int, label string, hovered bool) {

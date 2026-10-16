@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
+	"github.com/ahmadnaufalhakim/gochs/internal/entity"
+	lichessapi "github.com/ahmadnaufalhakim/gochs/internal/lichess"
 	"github.com/gdamore/tcell/v2"
 )
 
@@ -107,6 +109,87 @@ func TestMenuActivation(t *testing.T) {
 	state.handleKey(keyEvent(tcell.KeyEnter, 0))
 	if state.page != exitConfirmation || state.confirmExit {
 		t.Errorf("exit activation = %#v, want confirmation with No selected", state)
+	}
+}
+
+func TestLichessMenuFlow(t *testing.T) {
+	state := menuState{selected: lichess}
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if state.page != lichessLoading || state.lichessAction != lichessLoad {
+		t.Fatalf("Lichess activation = %#v", state)
+	}
+
+	state.applyLichessResult(lichessResult{action: lichessLoad, err: lichessapi.ErrNoToken})
+	if state.page != lichessMenu || state.lichessAccount != nil {
+		t.Fatalf("no-token result = %#v", state)
+	}
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if state.page != lichessToken {
+		t.Fatalf("connect selection page = %d, want token page", state.page)
+	}
+	for _, character := range "abc" {
+		state.handleKey(keyEvent(tcell.KeyRune, character))
+	}
+	if state.lichessToken != "abc" {
+		t.Errorf("token input = %q", state.lichessToken)
+	}
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if state.page != lichessLoading || state.lichessAction != lichessConnect {
+		t.Fatalf("token submit = %#v", state)
+	}
+
+	account := entity.LichessAccount{Username: "example", Bullet: 1800}
+	state.applyLichessResult(lichessResult{action: lichessConnect, account: account})
+	if state.page != lichessMenu || state.lichessAccount == nil || state.lichessAccount.Username != "example" {
+		t.Fatalf("connected account = %#v", state)
+	}
+}
+
+func TestDrawLichessTokenMasksToken(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 24)
+
+	draw(screen, menuState{page: lichessToken, lichessToken: "private-token"})
+	screen.Show()
+	contents, width, height := screen.GetContents()
+	text := screenText(contents, width, height)
+	if strings.Contains(text, "private-token") {
+		t.Error("token was rendered in plain text")
+	}
+	if !strings.Contains(text, "*************") {
+		t.Error("masked token was not rendered")
+	}
+}
+
+func TestLichessDisconnect(t *testing.T) {
+	state := menuState{page: lichessMenu, lichessAccount: &entity.LichessAccount{Username: "example"}, lichessSelected: 1, lichessToken: "private-token"}
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if state.page != lichessLoading || state.lichessAction != lichessDisconnect {
+		t.Fatalf("disconnect selection = %#v", state)
+	}
+	state.applyLichessResult(lichessResult{action: lichessDisconnect})
+	if state.lichessAccount != nil || state.lichessToken != "" || state.page != lichessMenu {
+		t.Errorf("disconnect result = %#v", state)
+	}
+}
+
+func TestLichessPuzzleRatingSyncConfirmation(t *testing.T) {
+	state := menuState{page: lichessMenu, lichessAccount: &entity.LichessAccount{ID: "example", Username: "example", Puzzle: 1800}, lichessSelected: 2}
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if state.page != lichessSyncConfirmation {
+		t.Fatalf("sync selection page = %d", state.page)
+	}
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if state.page != lichessLoading || state.lichessAction != lichessSyncRating {
+		t.Fatalf("sync confirmation = %#v", state)
+	}
+	state.applyLichessResult(lichessResult{action: lichessSyncRating, profile: entity.TrainingProfile{Rating: 1800}})
+	if state.page != lichessMenu || !strings.Contains(state.lichessMessage, "1800") {
+		t.Errorf("sync result = %#v", state)
 	}
 }
 

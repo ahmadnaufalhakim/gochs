@@ -70,6 +70,31 @@ func TestPuzzleWrongMoveRollsBack(t *testing.T) {
 	}
 }
 
+func TestPuzzleWrongMoveRecordsFailedRating(t *testing.T) {
+	now := time.Now()
+	puzzle := testPuzzle(t, "e2e4 e7e5")
+	var outcomes []entity.PuzzleOutcome
+	state, err := newPuzzleStateWithRecorder(puzzle, func(entity.Puzzle, entity.PuzzleOutcome) (entity.TrainingResult, error) {
+		outcomes = append(outcomes, entity.PuzzleFailed)
+		return entity.TrainingResult{Rated: true, Outcome: entity.PuzzleFailed, Before: 1500, After: 1484, Change: -16}, nil
+	}, chess.WOOD, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.advance(now.Add(puzzleInitialDelay))
+	wrongMove, err := state.board.ParseUCI("c7c5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.submitMove(wrongMove, now)
+	if len(outcomes) != 1 || outcomes[0] != entity.PuzzleFailed {
+		t.Errorf("outcomes = %v", outcomes)
+	}
+	if state.ratingResult == nil || !state.ratingResult.Rated || state.ratingResult.Change >= 0 {
+		t.Errorf("rating result = %#v", state.ratingResult)
+	}
+}
+
 func TestPuzzleAcceptsAlternativeFinalMate(t *testing.T) {
 	const fen = "1k6/2Q5/2K5/8/8/8/8/8 b - - 0 1"
 	board, err := chess.ParseFEN(fen)

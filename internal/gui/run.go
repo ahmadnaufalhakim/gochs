@@ -1,12 +1,15 @@
 package gui
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"time"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	"github.com/ahmadnaufalhakim/gochs/internal/entity"
+	lichessapi "github.com/ahmadnaufalhakim/gochs/internal/lichess"
 	"github.com/gdamore/tcell/v2"
 )
 
@@ -27,9 +30,17 @@ const (
 )
 
 type PuzzleLoader func() (entity.Puzzle, error)
+type PuzzleAttemptRecorder func(entity.Puzzle, entity.PuzzleOutcome) (entity.TrainingResult, error)
+type LichessRatingSynchronizer func(entity.LichessAccount) (entity.TrainingProfile, error)
+
+type LichessAccountService interface {
+	Load(context.Context) (entity.LichessAccount, error)
+	Connect(context.Context, string) (entity.LichessAccount, error)
+	Disconnect() error
+}
 
 // Run starts the terminal user interface.
-func Run(loadPuzzle PuzzleLoader, stockfishPath string) (Result, error) {
+func Run(loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, syncLichessRating LichessRatingSynchronizer, stockfishPath string, lichessService LichessAccountService) (Result, error) {
 	screen, err := tcell.NewScreen()
 	if err != nil {
 		return Exit, fmt.Errorf("create terminal screen: %w", err)
@@ -42,10 +53,10 @@ func Run(loadPuzzle PuzzleLoader, stockfishPath string) (Result, error) {
 	screen.SetStyle(backgroundStyle)
 	screen.EnableMouse(tcell.MouseButtonEvents, tcell.MouseMotionEvents)
 
-	return run(screen, loadPuzzle, stockfishPath), nil
+	return run(screen, loadPuzzle, recordPuzzleAttempt, syncLichessRating, stockfishPath, lichessService), nil
 }
 
-func run(screen tcell.Screen, loadPuzzle PuzzleLoader, stockfishPath string) Result {
+func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, syncLichessRating LichessRatingSynchronizer, stockfishPath string, lichessService LichessAccountService) Result {
 	state := newMenuState()
 	state.stockfishPath = stockfishPath
 	var game *localGameState
@@ -56,6 +67,7 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, stockfishPath string) Res
 	go screen.ChannelEvents(events, quitEvents)
 	clockTicker := time.NewTicker(100 * time.Millisecond)
 	defer clockTicker.Stop()
+	lichessResults := make(chan lichessResult, 1)
 
 	for {
 		screen.Clear()
@@ -76,6 +88,10 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, stockfishPath string) Res
 		case result := <-engineMoves:
 			if game != nil {
 				game.applyEngineResult(result)
+			}
+		case result := <-lichessResults:
+			if state.page == lichessLoading {
+				state.applyLichessResult(result)
 			}
 		case now := <-clockTicker.C:
 			if game != nil {
@@ -109,7 +125,7 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, stockfishPath string) Res
 						puzzle = nil
 						state.showMainMenu()
 					case puzzleContinueTraining:
-						puzzle = startPuzzle(loadPuzzle, state.theme, &state)
+						puzzle = startPuzzle(loadPuzzle, recordPuzzleAttempt, state.theme, &state)
 					}
 					continue
 				}
@@ -136,12 +152,13 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, stockfishPath string) Res
 						game = &newGame
 						state.result = Exit
 					} else if state.result == Puzzle {
-						puzzle = startPuzzle(loadPuzzle, state.theme, &state)
+						puzzle = startPuzzle(loadPuzzle, recordPuzzleAttempt, state.theme, &state)
 						state.result = Exit
 					} else {
 						return state.result
 					}
 				}
+				startLichessAction(&state, lichessService, syncLichessRating, lichessResults)
 			case *tcell.EventMouse:
 				width, height := screen.Size()
 				if game != nil {
@@ -154,7 +171,7 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, stockfishPath string) Res
 						puzzle = nil
 						state.showMainMenu()
 					case puzzleContinueTraining:
-						puzzle = startPuzzle(loadPuzzle, state.theme, &state)
+						puzzle = startPuzzle(loadPuzzle, recordPuzzleAttempt, state.theme, &state)
 					}
 					continue
 				}
@@ -177,18 +194,99 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, stockfishPath string) Res
 						game = &newGame
 						state.result = Exit
 					} else if state.result == Puzzle {
-						puzzle = startPuzzle(loadPuzzle, state.theme, &state)
+						puzzle = startPuzzle(loadPuzzle, recordPuzzleAttempt, state.theme, &state)
 						state.result = Exit
 					} else {
 						return state.result
 					}
 				}
+				startLichessAction(&state, lichessService, syncLichessRating, lichessResults)
 			}
 		}
 	}
 }
 
-func startPuzzle(loadPuzzle PuzzleLoader, theme chess.ColorTheme, state *menuState) *puzzleState {
+type lichessResult struct {
+	action  lichessAction
+	account entity.LichessAccount
+	profile entity.TrainingProfile
+	err     error
+}
+
+func startLichessAction(state *menuState, service LichessAccountService, syncRating LichessRatingSynchronizer, results chan<- lichessResult) {
+	action := state.lichessAction
+	if action == lichessNoAction {
+		return
+	}
+	state.lichessAction = lichessNoAction
+	if service == nil || (action == lichessSyncRating && syncRating == nil) {
+		state.page = lichessMenu
+		state.lichessMessage = "Lichess is unavailable"
+		return
+	}
+	token := state.lichessToken
+	account := state.lichessAccount
+	go func() {
+		result := lichessResult{action: action}
+		switch action {
+		case lichessLoad:
+			result.account, result.err = service.Load(context.Background())
+		case lichessConnect:
+			result.account, result.err = service.Connect(context.Background(), token)
+		case lichessDisconnect:
+			result.err = service.Disconnect()
+		case lichessSyncRating:
+			if account == nil {
+				result.err = fmt.Errorf("Lichess account is unavailable")
+			} else {
+				result.profile, result.err = syncRating(*account)
+			}
+		}
+		results <- result
+	}()
+}
+
+func (s *menuState) applyLichessResult(result lichessResult) {
+	if result.err != nil {
+		if errors.Is(result.err, lichessapi.ErrNoToken) {
+			s.lichessAccount = nil
+			s.lichessMessage = ""
+			s.page = lichessMenu
+			return
+		}
+		s.lichessMessage = result.err.Error()
+		if result.action == lichessConnect {
+			s.page = lichessToken
+		} else {
+			s.page = lichessMenu
+		}
+		return
+	}
+	if result.action == lichessDisconnect {
+		s.lichessAccount = nil
+		s.lichessToken = ""
+		s.lichessSelected = 0
+		s.lichessMessage = ""
+		s.page = lichessMenu
+		return
+	}
+	if result.action == lichessSyncRating {
+		s.lichessMessage = fmt.Sprintf("Offline puzzle rating synced to %d", result.profile.Rating)
+		s.page = lichessMenu
+		return
+	}
+	s.lichessAccount = &result.account
+	s.lichessToken = ""
+	s.lichessSelected = 0
+	s.lichessMessage = ""
+	if result.action == lichessConnect && result.account.Puzzle != 0 {
+		s.page = lichessSyncConfirmation
+		return
+	}
+	s.page = lichessMenu
+}
+
+func startPuzzle(loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, theme chess.ColorTheme, state *menuState) *puzzleState {
 	if loadPuzzle == nil {
 		state.message = "Puzzle database is unavailable"
 		return nil
@@ -198,7 +296,7 @@ func startPuzzle(loadPuzzle PuzzleLoader, theme chess.ColorTheme, state *menuSta
 		state.message = "Could not load a puzzle: " + err.Error()
 		return nil
 	}
-	newPuzzle, err := newPuzzleState(puzzle, theme, time.Now())
+	newPuzzle, err := newPuzzleStateWithRecorder(puzzle, recordPuzzleAttempt, theme, time.Now())
 	if err != nil {
 		state.message = "Could not prepare puzzle: " + err.Error()
 		return nil
