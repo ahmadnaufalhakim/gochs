@@ -29,7 +29,13 @@ func Run() error {
 		}
 		return training.SyncLichessProfile(account, time.Now())
 	}
-	result, err := gui.Run(loadPuzzle, recordPuzzleAttempt, syncLichessRating, stockfishPath, lichessService)
+	loadOfflinePuzzleRating := func() (entity.TrainingProfile, bool, error) {
+		if training == nil {
+			return entity.TrainingProfile{}, false, nil
+		}
+		return training.ActiveProfile()
+	}
+	result, err := gui.Run(loadPuzzle, recordPuzzleAttempt, syncLichessRating, loadOfflinePuzzleRating, stockfishPath, lichessService)
 	if err != nil {
 		return err
 	}

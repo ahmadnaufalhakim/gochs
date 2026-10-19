@@ -193,6 +193,27 @@ func TestLichessPuzzleRatingSyncConfirmation(t *testing.T) {
 	}
 }
 
+func TestDrawLichessSyncShowsOfflineRating(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 24)
+
+	draw(screen, menuState{
+		page:                lichessSyncConfirmation,
+		lichessAccount:      &entity.LichessAccount{Puzzle: 1800},
+		offlineRatingLoaded: true,
+		offlinePuzzleRating: 1725,
+	})
+	screen.Show()
+	contents, width, height := screen.GetContents()
+	if !strings.Contains(screenText(contents, width, height), "Current offline rating: 1725") {
+		t.Error("sync confirmation does not show the current offline rating")
+	}
+}
+
 func TestExitConfirmation(t *testing.T) {
 	state := menuState{page: exitConfirmation}
 	if state.handleKey(keyEvent(tcell.KeyEnter, 0)) {

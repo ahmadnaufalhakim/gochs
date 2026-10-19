@@ -78,32 +78,35 @@ const (
 )
 
 type menuState struct {
-	page                page
-	selected            menuItem
-	playSelected        playMenuItem
-	optionsSelected     optionsMenuItem
-	comingSoonLabel     string
-	confirmExit         bool
-	splashIndex         int
-	result              Result
-	theme               chess.ColorTheme
-	autoFlip            bool
-	timeControlSelected int
-	timeControl         timeControl
-	customMinutes       string
-	customIncrement     string
-	customFocus         customTimeField
-	customMessage       string
-	message             string
-	stockfishPath       string
-	stockfishColor      stockfishColor
-	stockfishDifficulty int
-	stockfishGame       bool
-	lichessAccount      *entity.LichessAccount
-	lichessSelected     int
-	lichessToken        string
-	lichessMessage      string
-	lichessAction       lichessAction
+	page                 page
+	selected             menuItem
+	playSelected         playMenuItem
+	optionsSelected      optionsMenuItem
+	comingSoonLabel      string
+	confirmExit          bool
+	splashIndex          int
+	result               Result
+	theme                chess.ColorTheme
+	autoFlip             bool
+	timeControlSelected  int
+	timeControl          timeControl
+	customMinutes        string
+	customIncrement      string
+	customFocus          customTimeField
+	customMessage        string
+	message              string
+	stockfishPath        string
+	stockfishColor       stockfishColor
+	stockfishDifficulty  int
+	stockfishGame        bool
+	lichessAccount       *entity.LichessAccount
+	lichessSelected      int
+	lichessToken         string
+	lichessMessage       string
+	lichessAction        lichessAction
+	offlinePuzzleRating  int
+	offlineRatingLoaded  bool
+	offlineRatingMessage string
 }
 
 type lichessAction uint8
@@ -626,6 +629,8 @@ func (s *menuState) activateLichessMenuItem() {
 		s.lichessAction = lichessDisconnect
 		s.lichessMessage = ""
 	case 2:
+		s.offlineRatingLoaded = false
+		s.offlineRatingMessage = ""
 		s.page = lichessSyncConfirmation
 	case 3:
 		s.showMainMenu()
@@ -805,9 +810,17 @@ func drawLichessSyncConfirmation(screen tcell.Screen, state menuState) {
 		return
 	}
 	drawCentered(screen, height/2-2, fmt.Sprintf("Lichess Puzzle rating: %d", state.lichessAccount.Puzzle), backgroundStyle)
-	drawCentered(screen, height/2, "This sets your offline rating to the Lichess value.", mutedStyle)
-	drawCentered(screen, height/2+1, "Puzzle history remains.", mutedStyle)
-	drawCentered(screen, height/2+3, "Enter to sync  Esc to cancel", selectedStyle)
+	currentRating := "No offline rating yet"
+	if state.offlineRatingLoaded {
+		currentRating = fmt.Sprintf("Current offline rating: %d", state.offlinePuzzleRating)
+	}
+	if state.offlineRatingMessage != "" {
+		currentRating = state.offlineRatingMessage
+	}
+	drawCentered(screen, height/2, currentRating, backgroundStyle)
+	drawCentered(screen, height/2+2, "This sets your offline rating to the Lichess value.", mutedStyle)
+	drawCentered(screen, height/2+3, "Puzzle history remains.", mutedStyle)
+	drawCentered(screen, height/2+5, "Enter to sync  Esc to cancel", selectedStyle)
 }
 
 func maskedToken(token string) string {

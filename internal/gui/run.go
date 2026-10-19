@@ -32,6 +32,7 @@ const (
 type PuzzleLoader func() (entity.Puzzle, error)
 type PuzzleAttemptRecorder func(entity.Puzzle, entity.PuzzleOutcome) (entity.TrainingResult, error)
 type LichessRatingSynchronizer func(entity.LichessAccount) (entity.TrainingProfile, error)
+type OfflinePuzzleRatingLoader func() (entity.TrainingProfile, bool, error)
 
 type LichessAccountService interface {
 	Load(context.Context) (entity.LichessAccount, error)
@@ -40,7 +41,7 @@ type LichessAccountService interface {
 }
 
 // Run starts the terminal user interface.
-func Run(loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, syncLichessRating LichessRatingSynchronizer, stockfishPath string, lichessService LichessAccountService) (Result, error) {
+func Run(loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, syncLichessRating LichessRatingSynchronizer, loadOfflinePuzzleRating OfflinePuzzleRatingLoader, stockfishPath string, lichessService LichessAccountService) (Result, error) {
 	screen, err := tcell.NewScreen()
 	if err != nil {
 		return Exit, fmt.Errorf("create terminal screen: %w", err)
@@ -53,10 +54,10 @@ func Run(loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, syn
 	screen.SetStyle(backgroundStyle)
 	screen.EnableMouse(tcell.MouseButtonEvents, tcell.MouseMotionEvents)
 
-	return run(screen, loadPuzzle, recordPuzzleAttempt, syncLichessRating, stockfishPath, lichessService), nil
+	return run(screen, loadPuzzle, recordPuzzleAttempt, syncLichessRating, loadOfflinePuzzleRating, stockfishPath, lichessService), nil
 }
 
-func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, syncLichessRating LichessRatingSynchronizer, stockfishPath string, lichessService LichessAccountService) Result {
+func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, syncLichessRating LichessRatingSynchronizer, loadOfflinePuzzleRating OfflinePuzzleRatingLoader, stockfishPath string, lichessService LichessAccountService) Result {
 	state := newMenuState()
 	state.stockfishPath = stockfishPath
 	var game *localGameState
@@ -92,6 +93,7 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 		case result := <-lichessResults:
 			if state.page == lichessLoading {
 				state.applyLichessResult(result)
+				loadOfflineRating(&state, loadOfflinePuzzleRating)
 			}
 		case now := <-clockTicker.C:
 			if game != nil {
@@ -159,6 +161,7 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 					}
 				}
 				startLichessAction(&state, lichessService, syncLichessRating, lichessResults)
+				loadOfflineRating(&state, loadOfflinePuzzleRating)
 			case *tcell.EventMouse:
 				width, height := screen.Size()
 				if game != nil {
@@ -201,9 +204,26 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 					}
 				}
 				startLichessAction(&state, lichessService, syncLichessRating, lichessResults)
+				loadOfflineRating(&state, loadOfflinePuzzleRating)
 			}
 		}
 	}
+}
+
+func loadOfflineRating(state *menuState, loadRating OfflinePuzzleRatingLoader) {
+	if state.page != lichessSyncConfirmation || state.offlineRatingLoaded || loadRating == nil {
+		return
+	}
+	profile, ok, err := loadRating()
+	if err != nil {
+		state.offlineRatingMessage = "Could not load offline rating"
+		state.offlineRatingLoaded = true
+		return
+	}
+	if ok {
+		state.offlinePuzzleRating = profile.Rating
+	}
+	state.offlineRatingLoaded = true
 }
 
 type lichessResult struct {
@@ -280,6 +300,8 @@ func (s *menuState) applyLichessResult(result lichessResult) {
 	s.lichessSelected = 0
 	s.lichessMessage = ""
 	if result.action == lichessConnect && result.account.Puzzle != 0 {
+		s.offlineRatingLoaded = false
+		s.offlineRatingMessage = ""
 		s.page = lichessSyncConfirmation
 		return
 	}
