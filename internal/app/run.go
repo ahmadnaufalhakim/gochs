@@ -9,6 +9,7 @@ import (
 	"github.com/ahmadnaufalhakim/gochs/internal/engine"
 	"github.com/ahmadnaufalhakim/gochs/internal/entity"
 	"github.com/ahmadnaufalhakim/gochs/internal/gui"
+	"github.com/ahmadnaufalhakim/gochs/internal/gui3d"
 	"github.com/ahmadnaufalhakim/gochs/internal/lichess"
 	"github.com/ahmadnaufalhakim/gochs/internal/repository"
 	"github.com/ahmadnaufalhakim/gochs/internal/storage"
@@ -44,6 +45,41 @@ func Run() error {
 	}
 
 	return nil
+}
+
+func Run3D() error {
+	loadPuzzle, recordPuzzleAttempt, training, closeDatabases := puzzleService()
+	defer closeDatabases()
+	stockfishPath, _ := engine.FindStockfish()
+	store, err := lichess.NewDefaultTokenStore()
+	if err != nil {
+		return err
+	}
+	lichessService := lichess.NewService(nil, store, os.Getenv("GOCHS_LICHESS_TOKEN"))
+	syncLichessRating := func(account entity.LichessAccount) (entity.TrainingProfile, error) {
+		if training == nil {
+			return entity.TrainingProfile{}, fmt.Errorf("offline training is unavailable")
+		}
+		return training.SyncLichessProfile(account, time.Now())
+	}
+	loadOfflinePuzzleRating := func() (entity.TrainingProfile, bool, error) {
+		if training == nil {
+			return entity.TrainingProfile{}, false, nil
+		}
+		return training.ActiveProfile()
+	}
+	return gui3d.Run(gui3d.Config{
+		LoadPuzzle: func() (entity.Puzzle, error) {
+			return loadPuzzle()
+		},
+		RecordPuzzleAttempt: func(puzzle entity.Puzzle, outcome entity.PuzzleOutcome) (entity.TrainingResult, error) {
+			return recordPuzzleAttempt(puzzle, outcome)
+		},
+		SyncLichessRating:       syncLichessRating,
+		LoadOfflinePuzzleRating: loadOfflinePuzzleRating,
+		Lichess:                 lichessService,
+		StockfishPath:           stockfishPath,
+	})
 }
 
 func puzzleService() (gui.PuzzleLoader, gui.PuzzleAttemptRecorder, *repository.TrainingRepository, func()) {

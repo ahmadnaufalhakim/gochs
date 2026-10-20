@@ -1,6 +1,31 @@
 # gochs
 Chess implementation in Golang
 
+## 3D Client
+
+Launch the experimental raylib 3D client with:
+
+```bash
+make run-3d
+```
+
+It uses raylib-go's SDL backend. Install the Linux graphics and `libsdl2-dev`
+packages before building it. The first build downloads and prepares the raylib
+dependency.
+
+The 3D client supports local games, a Stockfish opponent, random offline
+puzzles, and Lichess Puzzle-rating synchronization. Controls while playing:
+
+```text
+Left click or drag  Move a piece
+Right drag          Toggle a candidate-move arrow
+V                   Switch board side
+H                   Toggle highlights and legal targets
+A                   Toggle arrows
+C                   Toggle checked-king cue
+Esc                 Return to the menu
+```
+
 ## Stockfish
 
 Install Stockfish before selecting "Play with Stockfish":
