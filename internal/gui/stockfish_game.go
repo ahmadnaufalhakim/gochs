@@ -26,6 +26,7 @@ func (g *localGameState) startStockfish(path string, color stockfishColor, diffi
 
 	g.computerColor = new(chess.PieceColor)
 	*g.computerColor = computerColor
+	g.perspective = computerColor.Opponent()
 	g.stockfish = client
 	g.engineResults = make(chan engineResult, 1)
 	g.engineDifficulty = difficulty
