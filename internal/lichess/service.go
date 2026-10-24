@@ -13,24 +13,42 @@ import (
 	"github.com/ahmadnaufalhakim/gochs/internal/entity"
 )
 
-const accountURL = "https://lichess.org/api/account"
+const (
+	accountURL          = "https://lichess.org/api/account"
+	seekURL             = "https://lichess.org/api/board/seek"
+	eventStreamURL      = "https://lichess.org/api/stream/event"
+	gameStreamURLFormat = "https://lichess.org/api/board/game/stream/%s"
+	gameURLFormat       = "https://lichess.org/api/board/game/%s"
+)
 
 type Service struct {
 	httpClient       *http.Client
+	streamHTTPClient *http.Client
 	store            TokenStore
 	environmentToken string
 	accountURL       string
+	seekURL          string
+	eventStreamURL   string
+	gameStreamURL    string
+	gameURL          string
 }
 
 func NewService(httpClient *http.Client, store TokenStore, environmentToken string) *Service {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 	}
+	streamHTTPClient := *httpClient
+	streamHTTPClient.Timeout = 0
 	return &Service{
 		httpClient:       httpClient,
+		streamHTTPClient: &streamHTTPClient,
 		store:            store,
 		environmentToken: strings.TrimSpace(environmentToken),
 		accountURL:       accountURL,
+		seekURL:          seekURL,
+		eventStreamURL:   eventStreamURL,
+		gameStreamURL:    gameStreamURLFormat,
+		gameURL:          gameURLFormat,
 	}
 }
 
