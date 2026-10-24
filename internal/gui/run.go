@@ -50,6 +50,7 @@ type OnlineBoardService interface {
 	Resign(context.Context, string) error
 	SetDraw(context.Context, string, bool) error
 	SetTakeback(context.Context, string, bool) error
+	RatingChanges(context.Context, string) (lichessapi.RatingChanges, error)
 }
 
 // Run starts the terminal user interface.
@@ -138,7 +139,8 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 				}
 			} else {
 				online.apply(result)
-				if online.isFinished() && onlineCancel != nil {
+				online.loadRatingChanges(onlineService, onlineResults)
+				if (online.isFinished() || result.fatal) && onlineCancel != nil {
 					onlineCancel()
 				}
 			}

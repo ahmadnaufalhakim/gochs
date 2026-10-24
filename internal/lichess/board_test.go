@@ -2,13 +2,73 @@ package lichess
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+func TestBoardResponseErrorIncludesBoundedDetails(t *testing.T) {
+	detail := strings.Repeat("x", maxBoardErrorDetailBytes+1)
+	err := boardResponseError(&http.Response{
+		StatusCode: http.StatusTooManyRequests,
+		Body:       io.NopCloser(strings.NewReader(detail)),
+	}, "make move")
+	var boardErr *BoardHTTPError
+	if !errors.As(err, &boardErr) {
+		t.Fatalf("error = %T, want *BoardHTTPError", err)
+	}
+	if boardErr.StatusCode != http.StatusTooManyRequests || boardErr.Operation != "make move" {
+		t.Errorf("error = %#v", boardErr)
+	}
+	if len(boardErr.Detail) != maxBoardErrorDetailBytes {
+		t.Errorf("detail length = %d, want %d", len(boardErr.Detail), maxBoardErrorDetailBytes)
+	}
+	if boardErr.IsPermanent() {
+		t.Error("429 error should be retryable")
+	}
+}
+
+func TestBoardHTTPErrorPermanent(t *testing.T) {
+	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound} {
+		if !(&BoardHTTPError{StatusCode: statusCode}).IsPermanent() {
+			t.Errorf("status %d should be permanent", statusCode)
+		}
+	}
+}
+
+func TestStreamSetupClosesBodyOnStatusError(t *testing.T) {
+	for _, stream := range []string{"events", "game"} {
+		t.Run(stream, func(t *testing.T) {
+			body := &closeTrackingBody{Reader: strings.NewReader("not allowed")}
+			client := &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusForbidden, Body: body, Header: make(http.Header)}, nil
+			})}
+			service := NewService(client, &memoryStore{token: "token"}, "")
+
+			var err error
+			if stream == "events" {
+				_, errs := service.StreamEvents(context.Background())
+				err = <-errs
+			} else {
+				_, errs := service.StreamGame(context.Background(), "game-id")
+				err = <-errs
+			}
+			if !body.closed() {
+				t.Error("response body was not closed")
+			}
+			var boardErr *BoardHTTPError
+			if !errors.As(err, &boardErr) || boardErr.StatusCode != http.StatusForbidden {
+				t.Errorf("error = %v", err)
+			}
+		})
+	}
+}
 
 func TestCreateSeekSendsCasualStandardForm(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -184,4 +244,29 @@ func TestStreamGameParsesFullAndState(t *testing.T) {
 
 func valuesEqual(got, want url.Values) bool {
 	return got.Encode() == want.Encode()
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+type closeTrackingBody struct {
+	io.Reader
+	mu        sync.Mutex
+	wasClosed bool
+}
+
+func (b *closeTrackingBody) Close() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.wasClosed = true
+	return nil
+}
+
+func (b *closeTrackingBody) closed() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.wasClosed
 }

@@ -11,6 +11,28 @@ import (
 	"strings"
 )
 
+const maxBoardErrorDetailBytes = 4 << 10
+
+// BoardHTTPError reports a non-success response from a Lichess Board API endpoint.
+type BoardHTTPError struct {
+	StatusCode int
+	Operation  string
+	Detail     string
+}
+
+func (e *BoardHTTPError) Error() string {
+	message := fmt.Sprintf("Lichess %s failed: HTTP %d", e.Operation, e.StatusCode)
+	if e.Detail != "" {
+		return message + ": " + e.Detail
+	}
+	return message
+}
+
+// IsPermanent reports whether retrying the Board API request will not resolve this error.
+func (e *BoardHTTPError) IsPermanent() bool {
+	return e.StatusCode == http.StatusUnauthorized || e.StatusCode == http.StatusForbidden || e.StatusCode == http.StatusNotFound
+}
+
 type SeekColor string
 
 const (
@@ -66,6 +88,11 @@ type Player struct {
 	Rating      int
 	Provisional bool
 	Color       SeekColor
+}
+
+type RatingChanges struct {
+	White int
+	Black int
 }
 
 type GameState struct {
@@ -153,18 +180,48 @@ func (s *Service) SetTakeback(ctx context.Context, gameID string, accept bool) e
 	return s.gameAction(ctx, gameID, "/takeback/"+fmt.Sprintf("%t", accept))
 }
 
+// RatingChanges returns the rating deltas recorded for a completed game.
+func (s *Service) RatingChanges(ctx context.Context, gameID string) (RatingChanges, error) {
+	response, err := s.request(ctx, http.MethodGet, fmt.Sprintf(s.gameExportURL, url.PathEscape(gameID)), nil, "")
+	if err != nil {
+		return RatingChanges{}, err
+	}
+	defer response.Body.Close()
+	if err := boardResponseError(response, "export game"); err != nil {
+		return RatingChanges{}, err
+	}
+	var game struct {
+		Players struct {
+			White struct {
+				RatingDiff int `json:"ratingDiff"`
+			} `json:"white"`
+			Black struct {
+				RatingDiff int `json:"ratingDiff"`
+			} `json:"black"`
+		} `json:"players"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&game); err != nil {
+		return RatingChanges{}, fmt.Errorf("decode Lichess game export: %w", err)
+	}
+	return RatingChanges{White: game.Players.White.RatingDiff, Black: game.Players.Black.RatingDiff}, nil
+}
+
 func (s *Service) streamEvents(ctx context.Context, events chan<- Event, errors chan<- error, ready chan<- struct{}) {
 	defer close(events)
 	defer close(errors)
 	response, err := s.streamRequest(ctx, http.MethodGet, s.eventStreamURL, nil, "")
-	if err == nil {
-		err = boardResponseError(response, "stream events")
-	}
-	close(ready)
 	if err != nil {
+		close(ready)
 		errors <- err
 		return
 	}
+	if err := boardResponseError(response, "stream events"); err != nil {
+		_ = response.Body.Close()
+		close(ready)
+		errors <- err
+		return
+	}
+	close(ready)
 	defer response.Body.Close()
 	decoder := json.NewDecoder(bufio.NewReader(response.Body))
 	for {
@@ -195,10 +252,12 @@ func (s *Service) streamGame(ctx context.Context, gameID string, events chan<- G
 	defer close(events)
 	defer close(errors)
 	response, err := s.streamRequest(ctx, http.MethodGet, fmt.Sprintf(s.gameStreamURL, url.PathEscape(gameID)), nil, "")
-	if err == nil {
-		err = boardResponseError(response, "stream game")
-	}
 	if err != nil {
+		errors <- err
+		return
+	}
+	if err := boardResponseError(response, "stream game"); err != nil {
+		_ = response.Body.Close()
 		errors <- err
 		return
 	}
@@ -293,7 +352,12 @@ func (s *Service) requestWithClient(ctx context.Context, client *http.Client, me
 
 func boardResponseError(response *http.Response, action string) error {
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("Lichess %s failed: %s", action, response.Status)
+		detail, _ := io.ReadAll(io.LimitReader(response.Body, maxBoardErrorDetailBytes))
+		return &BoardHTTPError{
+			StatusCode: response.StatusCode,
+			Operation:  action,
+			Detail:     strings.TrimSpace(string(detail)),
+		}
 	}
 	return nil
 }

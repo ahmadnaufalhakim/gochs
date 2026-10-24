@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -18,6 +19,8 @@ type onlineResult struct {
 	event                  lichessapi.GameEvent
 	err                    error
 	action                 string
+	fatal                  bool
+	ratingChanges          *lichessapi.RatingChanges
 	seekGeneration         uint64
 	accountID, accountName string
 }
@@ -34,9 +37,27 @@ type onlineGameState struct {
 	requestContext  context.Context
 	pendingDraw     bool
 	pendingTakeback bool
+	ratingChanges   *lichessapi.RatingChanges
+	ratingLoading   bool
+	ratingChecked   bool
+	fatal           bool
 	offerAnimation  uint8
 	hoveredDraw     bool
 	hoveredTakeback bool
+}
+
+func (g *onlineGameState) loadRatingChanges(service OnlineBoardService, results chan<- onlineResult) {
+	if !g.isFinished() || g.ratingLoading || g.ratingChecked {
+		return
+	}
+	g.ratingLoading = true
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	gameID := g.gameID
+	go func() {
+		defer cancel()
+		changes, err := service.RatingChanges(ctx, gameID)
+		results <- onlineResult{action: "rating changes", ratingChanges: &changes, err: err}
+	}()
 }
 
 func startOnlineSeek(menu *menuState, service OnlineBoardService, results chan<- onlineResult, cancel *context.CancelFunc) {
@@ -82,6 +103,9 @@ func startOnlineSeek(menu *menuState, service OnlineBoardService, results chan<-
 				return
 			}
 		}
+		if ctx.Err() == nil {
+			sendOnlineResult(ctx, results, onlineResult{err: fmt.Errorf("Lichess event stream closed while waiting for an opponent"), seekGeneration: generation})
+		}
 	}()
 }
 
@@ -124,8 +148,8 @@ func sendOnlineResult(ctx context.Context, results chan<- onlineResult, result o
 
 func streamOnlineGame(ctx context.Context, service OnlineBoardService, gameID, accountID, accountName string, results chan<- onlineResult) {
 	for {
-		events, errors := service.StreamGame(ctx, gameID)
-		for events != nil || errors != nil {
+		events, streamErrors := service.StreamGame(ctx, gameID)
+		for events != nil || streamErrors != nil {
 			select {
 			case event, ok := <-events:
 				if !ok {
@@ -135,12 +159,17 @@ func streamOnlineGame(ctx context.Context, service OnlineBoardService, gameID, a
 				if !sendOnlineResult(ctx, results, onlineResult{event: event, accountID: accountID, accountName: accountName}) {
 					return
 				}
-			case err, ok := <-errors:
+			case err, ok := <-streamErrors:
 				if !ok {
-					errors = nil
+					streamErrors = nil
 					continue
 				}
 				if err != nil {
+					var boardError *lichessapi.BoardHTTPError
+					if errors.As(err, &boardError) && boardError.IsPermanent() {
+						sendOnlineResult(ctx, results, onlineResult{err: fmt.Errorf("Lichess game stream: %w", err), fatal: true})
+						return
+					}
 					select {
 					case results <- onlineResult{action: "reconnecting", err: fmt.Errorf("Lichess game stream: %w", err)}:
 					case <-ctx.Done():
@@ -148,7 +177,7 @@ func streamOnlineGame(ctx context.Context, service OnlineBoardService, gameID, a
 					}
 				}
 				events = nil
-				errors = nil
+				streamErrors = nil
 			}
 		}
 		if ctx.Err() != nil {
@@ -279,7 +308,15 @@ func (g onlineGameState) isFinished() bool {
 }
 
 func (g *onlineGameState) apply(result onlineResult) {
+	if result.fatal {
+		g.fatal = true
+	}
 	if result.err != nil {
+		if result.action == "rating changes" {
+			g.ratingLoading = false
+			g.ratingChecked = true
+			return
+		}
 		if result.action == "move" {
 			g.pendingMove = false
 		}
@@ -293,6 +330,16 @@ func (g *onlineGameState) apply(result onlineResult) {
 		return
 	}
 	switch event := result.event.(type) {
+	case nil:
+		if result.ratingChanges != nil {
+			g.ratingLoading = false
+			g.ratingChecked = true
+			g.ratingChanges = result.ratingChanges
+			return
+		}
+		if result.action == "reconnecting" {
+			g.message = "Reconnecting to Lichess..."
+		}
 	case lichessapi.GameFullEvent:
 		// Full events establish both the authoritative starting position and players.
 		if next, err := newOnlineGame(event, result.accountID, result.accountName, g.theme); err != nil {
@@ -305,15 +352,11 @@ func (g *onlineGameState) apply(result onlineResult) {
 		if err := g.rebuild(event.State); err != nil {
 			g.message = err.Error()
 		}
-	case nil:
-		if result.action == "reconnecting" {
-			g.message = "Reconnecting to Lichess..."
-		}
 	}
 }
 
 func (g *onlineGameState) handleKey(event *tcell.EventKey, service OnlineBoardService, results chan<- onlineResult) bool {
-	if g.isFinished() {
+	if g.isFinished() || g.fatal {
 		return event.Key() == tcell.KeyEsc
 	}
 	if g.state.WhiteDraw && g.me == chess.Black || g.state.BlackDraw && g.me == chess.White {
@@ -348,6 +391,9 @@ func (g *onlineGameState) handleMouse(event *tcell.EventMouse, width, height int
 	}
 	if g.isFinished() {
 		g.handleFinishedMouse(event, layout)
+		return
+	}
+	if g.fatal {
 		return
 	}
 	if event.Buttons() == tcell.ButtonNone {
@@ -540,9 +586,9 @@ func drawOnlineGame(screen tcell.Screen, game onlineGameState) {
 	if game.perspective == chess.Black {
 		top, bottom, topColor, bottomColor = bottom, top, chess.White, chess.Black
 	}
-	drawString(screen, layout.x-2, layout.y-3, playerLine(top, topColor), titleStyle)
+	drawString(screen, layout.x-2, layout.y-3, game.playerLine(top, topColor), titleStyle)
 	drawString(screen, layout.x-2, layout.y-2, formatClock(game.clockRemaining[topColor])+"  "+materialIndicator(game.board, topColor), mutedStyle)
-	drawString(screen, layout.x-2, layout.y+10, playerLine(bottom, bottomColor), titleStyle)
+	drawString(screen, layout.x-2, layout.y+10, game.playerLine(bottom, bottomColor), titleStyle)
 	drawString(screen, layout.x-2, layout.y+11, formatClock(game.clockRemaining[bottomColor])+"  "+materialIndicator(game.board, bottomColor), mutedStyle)
 	if game.isFinished() {
 		drawOnlineSavePGNButton(screen, display, layout, false)
@@ -637,6 +683,18 @@ func playerLine(player lichessapi.Player, color chess.PieceColor) string {
 		marker = "○"
 	}
 	return fmt.Sprintf("%s %s (%d)", marker, player.Name, player.Rating)
+}
+
+func (g onlineGameState) playerLine(player lichessapi.Player, color chess.PieceColor) string {
+	line := playerLine(player, color)
+	if !g.isFinished() || g.ratingChanges == nil {
+		return line
+	}
+	delta := g.ratingChanges.White
+	if color == chess.Black {
+		delta = g.ratingChanges.Black
+	}
+	return fmt.Sprintf("%s %+d -> %d", line, delta, player.Rating+delta)
 }
 
 func drawOnlineActionButtons(screen tcell.Screen, game onlineGameState, layout boardLayout) {
