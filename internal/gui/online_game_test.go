@@ -150,6 +150,33 @@ func TestOnlineGameHighlightsHoverablePiece(t *testing.T) {
 	}
 }
 
+func TestFinishedOnlineGameReviewControls(t *testing.T) {
+	game := onlineGameState{localGameState: newLocalGameState(chess.WOOD), state: lichessapi.GameState{Status: "mate"}}
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("expected board layout")
+	}
+	flipX, flipY := flipButtonPosition(layout)
+	game.handleMouse(tcell.NewEventMouse(flipX, flipY, tcell.ButtonNone, tcell.ModNone), 80, 24, nil, nil)
+	if !game.hoveredFlip {
+		t.Fatal("finished game flip button was not highlighted")
+	}
+	game.handleMouse(tcell.NewEventMouse(flipX, flipY, tcell.Button1, tcell.ModNone), 80, 24, nil, nil)
+	if game.perspective != chess.Black {
+		t.Errorf("perspective = %s, want Black after flip", game.perspective)
+	}
+	saveX, saveY := savePGNButtonPosition(layout, false)
+	game.handleMouse(tcell.NewEventMouse(saveX, saveY, tcell.ButtonNone, tcell.ModNone), 80, 24, nil, nil)
+	if !game.hoveredSavePGN {
+		t.Fatal("finished game PGN button was not highlighted")
+	}
+	clocksX, clocksY := savePGNButtonPosition(layout, true)
+	game.handleMouse(tcell.NewEventMouse(clocksX, clocksY, tcell.ButtonNone, tcell.ModNone), 80, 24, nil, nil)
+	if !game.hoveredSaveClocks {
+		t.Fatal("finished game PGN clocks button was not highlighted")
+	}
+}
+
 func TestOnlineOfferButtonLabelsAnimateAndDisable(t *testing.T) {
 	game := onlineGameState{pendingDraw: true, pendingTakeback: true, state: lichessapi.GameState{Status: "started"}}
 	if got := game.drawOfferLabel(); got != "[🤝] Offering draw." {
@@ -212,6 +239,9 @@ func TestOnlineGameRendersPlayersAndServerClocks(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Errorf("online board missing %q", want)
 		}
+	}
+	if !strings.Contains(text, "Move (UCI)") {
+		t.Error("online board must render a UCI input box while active")
 	}
 }
 

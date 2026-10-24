@@ -326,7 +326,7 @@ func (g *onlineGameState) handleKey(event *tcell.EventKey, service OnlineBoardSe
 	case tcell.KeyEsc:
 		return false
 	case tcell.KeyEnter:
-		g.submitMove(service, results)
+		g.submitMove(service, results, g.uciInput)
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		if len(g.uciInput) > 0 {
 			g.uciInput = g.uciInput[:len(g.uciInput)-1]
@@ -347,6 +347,7 @@ func (g *onlineGameState) handleMouse(event *tcell.EventMouse, width, height int
 		return
 	}
 	if g.isFinished() {
+		g.handleFinishedMouse(event, layout)
 		return
 	}
 	if event.Buttons() == tcell.ButtonNone {
@@ -405,7 +406,40 @@ func (g *onlineGameState) handleMouse(event *tcell.EventMouse, width, height int
 		return
 	}
 	g.uciInput = move
-	g.submitMove(service, results)
+	g.submitMove(service, results, move)
+}
+
+func (g *onlineGameState) handleFinishedMouse(event *tcell.EventMouse, layout boardLayout) {
+	x, y := event.Position()
+	if event.Buttons() == tcell.ButtonNone {
+		g.hoveredFlip = flipButtonAt(x, y, layout)
+		g.hoveredSavePGN = savePGNButtonAt(x, y, layout, false)
+		g.hoveredSaveClocks = savePGNButtonAt(x, y, layout, true)
+		return
+	}
+	if event.Buttons() != tcell.Button1 {
+		return
+	}
+	if flipButtonAt(x, y, layout) {
+		g.flipBoard()
+		return
+	}
+	if savePGNButtonAt(x, y, layout, false) {
+		if err := g.savePGN(false); err != nil {
+			g.exportMessage = "Could not save PGN: " + err.Error()
+		}
+		return
+	}
+	if savePGNButtonAt(x, y, layout, true) {
+		if err := g.savePGN(true); err != nil {
+			g.exportMessage = "Could not save PGN: " + err.Error()
+		}
+		return
+	}
+	if ply, ok := g.historyPlyAt(x, y, layout); ok {
+		g.viewPly = ply
+		g.syncHistoryAfterClick(y - (layout.y + 1))
+	}
 }
 
 func (g *onlineGameState) handleOfferKey(event *tcell.EventKey, service OnlineBoardService, results chan<- onlineResult, action string) bool {
@@ -421,16 +455,15 @@ func (g *onlineGameState) handleOfferKey(event *tcell.EventKey, service OnlineBo
 	return false
 }
 
-func (g *onlineGameState) submitMove(service OnlineBoardService, results chan<- onlineResult) {
+func (g *onlineGameState) submitMove(service OnlineBoardService, results chan<- onlineResult, move string) {
 	if g.pendingMove || g.board.ColorToMove != g.me {
 		return
 	}
-	if _, err := g.board.ParseUCI(g.uciInput); err != nil {
+	if _, err := g.board.ParseUCI(move); err != nil {
 		g.message = err.Error()
 		return
 	}
 	g.pendingMove = true
-	move := g.uciInput
 	g.uciInput = ""
 	go func() {
 		sendOnlineResult(g.boardContext(), results, onlineResult{action: "move", err: service.MakeMove(g.boardContext(), g.gameID, move)})
@@ -475,8 +508,12 @@ func drawOnlineGame(screen tcell.Screen, game onlineGameState) {
 		drawCentered(screen, height/2, "Terminal too small", titleStyle)
 		return
 	}
-	drawBoard(screen, game.localGameState, layout)
-	drawMoveHistory(screen, game.localGameState, layout, width)
+	display := game.localGameState
+	if game.isFinished() {
+		display.terminalTitle = "Online game finished"
+	}
+	drawBoard(screen, display, layout)
+	drawMoveHistory(screen, display, layout, width)
 	top := game.black
 	bottom := game.white
 	topColor, bottomColor := chess.Black, chess.White
@@ -487,6 +524,14 @@ func drawOnlineGame(screen tcell.Screen, game onlineGameState) {
 	drawString(screen, layout.x-2, layout.y-2, formatClock(game.clockRemaining[topColor])+"  "+materialIndicator(game.board, topColor), mutedStyle)
 	drawString(screen, layout.x-2, layout.y+10, playerLine(bottom, bottomColor), titleStyle)
 	drawString(screen, layout.x-2, layout.y+11, formatClock(game.clockRemaining[bottomColor])+"  "+materialIndicator(game.board, bottomColor), mutedStyle)
+	if game.isFinished() {
+		drawSavePGNButton(screen, display, layout, false)
+		drawSavePGNButton(screen, display, layout, true)
+		if game.exportMessage != "" {
+			drawString(screen, layout.x-2, layout.y+13, game.exportMessage, mutedStyle)
+		}
+		return
+	}
 	drawString(screen, layout.x-2, layout.y+13, "Move (UCI): "+game.uciInput+"_", backgroundStyle)
 	message := game.message
 	if game.incomingDraw() {
