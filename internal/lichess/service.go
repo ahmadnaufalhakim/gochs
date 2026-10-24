@@ -20,6 +20,7 @@ const (
 	gameStreamURLFormat = "https://lichess.org/api/board/game/stream/%s"
 	gameURLFormat       = "https://lichess.org/api/board/game/%s"
 	gameExportURLFormat = "https://lichess.org/game/export/%s?pgnInJson=true"
+	gamePGNExportURL    = "https://lichess.org/game/export/%s"
 )
 
 type Service struct {
@@ -33,6 +34,7 @@ type Service struct {
 	gameStreamURL    string
 	gameURL          string
 	gameExportURL    string
+	gamePGNExportURL string
 }
 
 func NewService(httpClient *http.Client, store TokenStore, environmentToken string) *Service {
@@ -52,6 +54,7 @@ func NewService(httpClient *http.Client, store TokenStore, environmentToken stri
 		gameStreamURL:    gameStreamURLFormat,
 		gameURL:          gameURLFormat,
 		gameExportURL:    gameExportURLFormat,
+		gamePGNExportURL: gamePGNExportURL,
 	}
 }
 

@@ -51,6 +51,7 @@ type OnlineBoardService interface {
 	SetDraw(context.Context, string, bool) error
 	SetTakeback(context.Context, string, bool) error
 	RatingChanges(context.Context, string) (lichessapi.RatingChanges, error)
+	ExportPGN(context.Context, string, bool) ([]byte, error)
 }
 
 // Run starts the terminal user interface.
@@ -129,6 +130,7 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 						state.lichessMessage = err.Error()
 					} else {
 						online = newOnline
+						online.seek = result.seek
 						online.requestContext = onlineContext
 						onlineVisible = true
 						state.onlineActive = true

@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	lichessapi "github.com/ahmadnaufalhakim/gochs/internal/lichess"
+	"github.com/ahmadnaufalhakim/gochs/internal/pgn"
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
 )
@@ -21,6 +24,9 @@ type onlineResult struct {
 	action                 string
 	fatal                  bool
 	ratingChanges          *lichessapi.RatingChanges
+	exportedPGN            []byte
+	includeClocks          bool
+	seek                   lichessapi.Seek
 	seekGeneration         uint64
 	accountID, accountName string
 }
@@ -28,6 +34,8 @@ type onlineResult struct {
 type onlineGameState struct {
 	localGameState
 	gameID          string
+	createdAt       int64
+	seek            lichessapi.Seek
 	me              chess.PieceColor
 	white, black    lichessapi.Player
 	state           lichessapi.GameState
@@ -39,6 +47,7 @@ type onlineGameState struct {
 	ratingChanges   *lichessapi.RatingChanges
 	ratingLoading   bool
 	ratingChecked   bool
+	exportingPGN    bool
 	fatal           bool
 	offerAnimation  uint8
 	hoveredDraw     bool
@@ -136,7 +145,8 @@ func applyOnlineSeekResult(menu *menuState, result onlineResult, service OnlineB
 	}
 	*cancel = newCancel
 	game := *result.gameStart
-	go streamOnlineGame(ctx, service, game.ID, menu.lichessAccount.ID, menu.lichessAccount.Username, results)
+	seek := lichessapi.Seek{TimeSeconds: int(menu.timeControl.initial.Seconds()), IncrementSeconds: int(menu.timeControl.increment.Seconds()), Rated: menu.onlineRated}
+	go streamOnlineGame(ctx, service, game.ID, menu.lichessAccount.ID, menu.lichessAccount.Username, seek, results)
 	return ctx
 }
 
@@ -149,7 +159,7 @@ func sendOnlineResult(ctx context.Context, results chan<- onlineResult, result o
 	}
 }
 
-func streamOnlineGame(ctx context.Context, service OnlineBoardService, gameID, accountID, accountName string, results chan<- onlineResult) {
+func streamOnlineGame(ctx context.Context, service OnlineBoardService, gameID, accountID, accountName string, seek lichessapi.Seek, results chan<- onlineResult) {
 	for {
 		events, streamErrors := service.StreamGame(ctx, gameID)
 		for events != nil || streamErrors != nil {
@@ -159,7 +169,7 @@ func streamOnlineGame(ctx context.Context, service OnlineBoardService, gameID, a
 					events = nil
 					continue
 				}
-				if !sendOnlineResult(ctx, results, onlineResult{event: event, accountID: accountID, accountName: accountName}) {
+				if !sendOnlineResult(ctx, results, onlineResult{event: event, accountID: accountID, accountName: accountName, seek: seek}) {
 					return
 				}
 			case err, ok := <-streamErrors:
@@ -212,7 +222,7 @@ func newOnlineGame(full lichessapi.GameFullEvent, accountID, accountName string,
 			return nil, err
 		}
 	}
-	game := &onlineGameState{gameID: full.Game.ID, white: full.Game.White, black: full.Game.Black, state: full.State}
+	game := &onlineGameState{gameID: full.Game.ID, createdAt: full.Game.CreatedAt, white: full.Game.White, black: full.Game.Black, state: full.State}
 	game.localGameState = newLocalGameState(theme)
 	game.board = board
 	game.positions = []chess.Board{board}
@@ -320,6 +330,15 @@ func (g *onlineGameState) apply(result onlineResult) {
 			g.ratingChecked = true
 			return
 		}
+		if result.action == "save PGN" {
+			g.exportingPGN = false
+			if _, saveErr := savePGNBytes(g.pgnFileDate(), result.includeClocks, []byte(pgn.Format(g.pgnGame(), result.includeClocks))); saveErr != nil {
+				g.exportMessage = "Could not save PGN: " + saveErr.Error()
+			} else {
+				g.exportMessage = "Saved local PGN (Lichess export unavailable)"
+			}
+			return
+		}
 		if result.action == "move" {
 			g.pendingMove = false
 		}
@@ -334,6 +353,16 @@ func (g *onlineGameState) apply(result onlineResult) {
 	}
 	switch event := result.event.(type) {
 	case nil:
+		if result.action == "save PGN" {
+			g.exportingPGN = false
+			path, err := savePGNBytes(g.pgnFileDate(), result.includeClocks, result.exportedPGN)
+			if err != nil {
+				g.exportMessage = "Could not save PGN: " + err.Error()
+			} else {
+				g.exportMessage = "Saved " + filepath.Base(path)
+			}
+			return
+		}
 		if result.ratingChanges != nil {
 			g.ratingLoading = false
 			g.ratingChecked = true
@@ -349,12 +378,101 @@ func (g *onlineGameState) apply(result onlineResult) {
 			g.message = err.Error()
 		} else {
 			next.perspective = g.perspective
+			next.seek = g.seek
 			*g = *next
 		}
 	case lichessapi.GameStateEvent:
 		if err := g.rebuild(event.State); err != nil {
 			g.message = err.Error()
 		}
+	}
+}
+
+func (g *onlineGameState) savePGN(service OnlineBoardService, results chan<- onlineResult, includeClocks bool) {
+	if g.exportingPGN {
+		return
+	}
+	g.exportingPGN = true
+	g.exportMessage = "Saving PGN..."
+	gameID := g.gameID
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		exported, err := service.ExportPGN(ctx, gameID, includeClocks)
+		results <- onlineResult{action: "save PGN", exportedPGN: exported, includeClocks: includeClocks, err: err}
+	}()
+}
+
+func (g onlineGameState) pgnDate() time.Time {
+	if g.createdAt > 0 {
+		return time.UnixMilli(g.createdAt).UTC()
+	}
+	if !g.startedAt.IsZero() {
+		return g.startedAt.UTC()
+	}
+	return time.Now().UTC()
+}
+
+func (g onlineGameState) pgnFileDate() time.Time {
+	return g.pgnDate().Local()
+}
+
+func (g onlineGameState) pgnGame() pgn.Game {
+	eventType := "casual"
+	if g.seek.Rated {
+		eventType = "rated"
+	}
+	speed := "rapid"
+	if g.seek.TimeSeconds >= 30*60 {
+		speed = "classical"
+	}
+	date := g.pgnDate()
+	game := pgn.Game{
+		Event:       fmt.Sprintf("%s %s game", eventType, speed),
+		Site:        "https://lichess.org/game/" + g.gameID,
+		Date:        date,
+		Round:       "-",
+		White:       g.white.Name,
+		Black:       g.black.Name,
+		Result:      g.pgnResult(),
+		Variant:     "Standard",
+		TimeControl: fmt.Sprintf("%d+%d", g.seek.TimeSeconds, g.seek.IncrementSeconds),
+		Termination: g.pgnTermination(),
+		GameID:      g.gameID,
+		UTCDate:     date.Format("2006.01.02"),
+		UTCTime:     date.Format("15:04:05"),
+		WhiteElo:    strconv.Itoa(g.white.Rating),
+		BlackElo:    strconv.Itoa(g.black.Rating),
+		Moves:       g.history,
+		Clocks:      g.clockHistory,
+	}
+	if g.ratingChanges != nil {
+		game.WhiteRatingDiff = fmt.Sprintf("%+d", g.ratingChanges.White)
+		game.BlackRatingDiff = fmt.Sprintf("%+d", g.ratingChanges.Black)
+	}
+	return game
+}
+
+func (g onlineGameState) pgnResult() string {
+	if winner, ok := lichessWinner(g.state.Winner); ok {
+		return winner.EndResult()
+	}
+	if g.state.Status == "aborted" || g.state.Status == "noStart" {
+		return "*"
+	}
+	return "1/2-1/2"
+}
+
+func (g onlineGameState) pgnTermination() string {
+	switch g.state.Status {
+	case "timeout", "outoftime":
+		return "Time forfeit"
+	case "aborted", "noStart":
+		return "Abandoned"
+	case "cheat":
+		return "Rules infraction"
+	default:
+		return "Normal"
 	}
 }
 
@@ -393,7 +511,7 @@ func (g *onlineGameState) handleMouse(event *tcell.EventMouse, width, height int
 		return
 	}
 	if g.isFinished() {
-		g.handleFinishedMouse(event, layout)
+		g.handleFinishedMouse(event, layout, service, results)
 		return
 	}
 	if g.fatal {
@@ -458,7 +576,7 @@ func (g *onlineGameState) handleMouse(event *tcell.EventMouse, width, height int
 	g.submitMove(service, results, move)
 }
 
-func (g *onlineGameState) handleFinishedMouse(event *tcell.EventMouse, layout boardLayout) {
+func (g *onlineGameState) handleFinishedMouse(event *tcell.EventMouse, layout boardLayout, service OnlineBoardService, results chan<- onlineResult) {
 	x, y := event.Position()
 	if event.Buttons() == tcell.ButtonNone {
 		g.hoveredFlip = flipButtonAt(x, y, layout)
@@ -493,15 +611,11 @@ func (g *onlineGameState) handleFinishedMouse(event *tcell.EventMouse, layout bo
 		return
 	}
 	if onlineSavePGNButtonAt(x, y, layout, false) {
-		if err := g.savePGN(false); err != nil {
-			g.exportMessage = "Could not save PGN: " + err.Error()
-		}
+		g.savePGN(service, results, false)
 		return
 	}
 	if onlineSavePGNButtonAt(x, y, layout, true) {
-		if err := g.savePGN(true); err != nil {
-			g.exportMessage = "Could not save PGN: " + err.Error()
-		}
+		g.savePGN(service, results, true)
 		return
 	}
 	if ply, ok := g.historyPlyAt(x, y, layout); ok {

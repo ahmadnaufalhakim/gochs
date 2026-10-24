@@ -2,6 +2,8 @@ package gui
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -317,6 +319,60 @@ func TestOnlineGameShowsRatingChangesAfterFinish(t *testing.T) {
 	}
 	if got := game.playerLine(lichessapi.Player{Name: "Black", Rating: 1600}, chess.Black); got != "○ Black (1600) -5 -> 1595" {
 		t.Errorf("black rating line = %q", got)
+	}
+}
+
+func TestOnlinePGNFallbackSavesMetadataAndRendersMessage(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", directory)
+	started := time.Date(2026, time.October, 24, 12, 34, 56, 0, time.UTC)
+	changes := lichessapi.RatingChanges{White: 7, Black: -7}
+	game := onlineGameState{
+		localGameState: newLocalGameState(chess.WOOD),
+		gameID:         "abc123",
+		createdAt:      started.UnixMilli(),
+		white:          lichessapi.Player{Name: "White", Rating: 1600},
+		black:          lichessapi.Player{Name: "Black", Rating: 1700},
+		state:          lichessapi.GameState{Status: "timeout", Winner: "white"},
+		seek:           lichessapi.Seek{TimeSeconds: 600, IncrementSeconds: 5, Rated: true},
+		ratingChanges:  &changes,
+	}
+	game.history = []string{"e4", "e5"}
+	if game.pgnFileDate().Location() != time.Local {
+		t.Fatalf("filename time zone = %s, want local", game.pgnFileDate().Location())
+	}
+	if game.pgnDate().Location() != time.UTC {
+		t.Fatalf("PGN time zone = %s, want UTC", game.pgnDate().Location())
+	}
+	game.apply(onlineResult{action: "save PGN", includeClocks: false, err: context.DeadlineExceeded})
+	if !strings.Contains(game.exportMessage, "Lichess export unavailable") {
+		t.Fatalf("export message = %q", game.exportMessage)
+	}
+	path := filepath.Join(directory, "gochs", "games", game.pgnFileDate().Format("20060102-150405.000000000")+"-plain.pgn")
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"[Event \"rated rapid game\"]", "[Site \"https://lichess.org/game/abc123\"]", "[GameId \"abc123\"]",
+		"[UTCDate \"2026.10.24\"]", "[UTCTime \"12:34:56\"]", "[WhiteElo \"1600\"]", "[BlackElo \"1700\"]",
+		"[WhiteRatingDiff \"+7\"]", "[BlackRatingDiff \"-7\"]", "[TimeControl \"600+5\"]", "[Termination \"Time forfeit\"]",
+	} {
+		if !strings.Contains(string(contents), want) {
+			t.Errorf("PGN missing %q:\n%s", want, contents)
+		}
+	}
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 30)
+	drawOnlineGame(screen, game)
+	screen.Show()
+	cells, width, height := screen.GetContents()
+	if !strings.Contains(screenText(cells, width, height), "Lichess export unavailable") {
+		t.Fatal("fallback export message was not rendered")
 	}
 }
 

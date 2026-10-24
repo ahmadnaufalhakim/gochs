@@ -576,29 +576,35 @@ func (c timeControl) pgnValue() string {
 }
 
 func (g *localGameState) savePGN(includeClocks bool) error {
-	directory, err := pgnDirectory()
+	path, err := savePGNBytes(g.startedAt, includeClocks, []byte(pgn.Format(g.pgnGame(), includeClocks)))
 	if err != nil {
 		return err
 	}
+	g.exportMessage = "Saved " + filepath.Base(path)
+	return nil
+}
+
+func savePGNBytes(startedAt time.Time, includeClocks bool, contents []byte) (string, error) {
+	directory, err := pgnDirectory()
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return err
+		return "", err
 	}
 
 	format := "plain"
 	if includeClocks {
 		format = "clocks"
 	}
-	startedAt := g.startedAt
 	if startedAt.IsZero() {
 		startedAt = time.Now()
 	}
 	path := filepath.Join(directory, startedAt.Format("20060102-150405.000000000")+"-"+format+".pgn")
-	if err := os.WriteFile(path, []byte(pgn.Format(g.pgnGame(), includeClocks)), 0o600); err != nil {
-		return err
+	if err := os.WriteFile(path, contents, 0o600); err != nil {
+		return "", err
 	}
-
-	g.exportMessage = "Saved " + filepath.Base(path)
-	return nil
+	return path, nil
 }
 
 func pgnDirectory() (string, error) {

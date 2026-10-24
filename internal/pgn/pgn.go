@@ -9,18 +9,25 @@ import (
 const Annotator = "github.com/ahmadnaufalhakim/gochs"
 
 type Game struct {
-	Event       string
-	Site        string
-	Date        time.Time
-	Round       string
-	White       string
-	Black       string
-	Result      string
-	Variant     string
-	TimeControl string
-	Termination string
-	Moves       []string
-	Clocks      []time.Duration
+	Event           string
+	Site            string
+	Date            time.Time
+	Round           string
+	White           string
+	Black           string
+	Result          string
+	Variant         string
+	TimeControl     string
+	Termination     string
+	GameID          string
+	UTCDate         string
+	UTCTime         string
+	WhiteElo        string
+	BlackElo        string
+	WhiteRatingDiff string
+	BlackRatingDiff string
+	Moves           []string
+	Clocks          []time.Duration
 }
 
 func Format(game Game, includeClocks bool) string {
@@ -32,11 +39,34 @@ func Format(game Game, includeClocks bool) string {
 		{"White", game.White},
 		{"Black", game.Black},
 		{"Result", game.Result},
-		{"Annotator", Annotator},
-		{"Variant", game.Variant},
-		{"TimeControl", game.TimeControl},
-		{"Termination", game.Termination},
 	}
+	if game.GameID != "" {
+		tags = append(tags, [2]string{"GameId", game.GameID})
+	}
+	if game.UTCDate != "" {
+		tags = append(tags, [2]string{"UTCDate", game.UTCDate})
+	}
+	if game.UTCTime != "" {
+		tags = append(tags, [2]string{"UTCTime", game.UTCTime})
+	}
+	if game.WhiteElo != "" {
+		tags = append(tags, [2]string{"WhiteElo", game.WhiteElo})
+	}
+	if game.BlackElo != "" {
+		tags = append(tags, [2]string{"BlackElo", game.BlackElo})
+	}
+	if game.WhiteRatingDiff != "" {
+		tags = append(tags, [2]string{"WhiteRatingDiff", game.WhiteRatingDiff})
+	}
+	if game.BlackRatingDiff != "" {
+		tags = append(tags, [2]string{"BlackRatingDiff", game.BlackRatingDiff})
+	}
+	tags = append(tags,
+		[2]string{"Variant", game.Variant},
+		[2]string{"TimeControl", game.TimeControl},
+		[2]string{"Termination", game.Termination},
+		[2]string{"Annotator", Annotator},
+	)
 
 	var output strings.Builder
 	for _, tag := range tags {

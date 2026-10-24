@@ -3,6 +3,7 @@ package lichess
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -212,6 +213,36 @@ func TestRatingChangesExportsCompletedGame(t *testing.T) {
 	}
 	if changes != (RatingChanges{White: 7, Black: -7}) {
 		t.Errorf("changes = %#v", changes)
+	}
+}
+
+func TestExportPGNRequestsClocks(t *testing.T) {
+	for _, clocks := range []bool{false, true} {
+		t.Run(fmt.Sprintf("clocks=%t", clocks), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				if request.Method != http.MethodGet {
+					t.Errorf("method = %s", request.Method)
+				}
+				if request.URL.Path != "/game/export/game-id" || request.URL.Query().Get("clocks") != fmt.Sprintf("%t", clocks) {
+					t.Errorf("URL = %s", request.URL)
+				}
+				if request.Header.Get("Accept") != "application/x-chess-pgn" {
+					t.Errorf("accept = %q", request.Header.Get("Accept"))
+				}
+				_, _ = writer.Write([]byte("[Event \"game\"]\n"))
+			}))
+			defer server.Close()
+
+			service := NewService(server.Client(), &memoryStore{token: "token"}, "")
+			service.gamePGNExportURL = server.URL + "/game/export/%s"
+			got, err := service.ExportPGN(context.Background(), "game-id", clocks)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != "[Event \"game\"]\n" {
+				t.Errorf("PGN = %q", got)
+			}
+		})
 	}
 }
 
