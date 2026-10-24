@@ -165,15 +165,64 @@ func TestFinishedOnlineGameReviewControls(t *testing.T) {
 	if game.perspective != chess.Black {
 		t.Errorf("perspective = %s, want Black after flip", game.perspective)
 	}
-	saveX, saveY := savePGNButtonPosition(layout, false)
+	saveX, saveY := onlineSavePGNButtonPosition(layout, false)
 	game.handleMouse(tcell.NewEventMouse(saveX, saveY, tcell.ButtonNone, tcell.ModNone), 80, 24, nil, nil)
 	if !game.hoveredSavePGN {
 		t.Fatal("finished game PGN button was not highlighted")
 	}
-	clocksX, clocksY := savePGNButtonPosition(layout, true)
+	clocksX, clocksY := onlineSavePGNButtonPosition(layout, true)
 	game.handleMouse(tcell.NewEventMouse(clocksX, clocksY, tcell.ButtonNone, tcell.ModNone), 80, 24, nil, nil)
 	if !game.hoveredSaveClocks {
 		t.Fatal("finished game PGN clocks button was not highlighted")
+	}
+}
+
+func TestOnlinePGNButtonsDoNotOverlapPlayerRows(t *testing.T) {
+	layout, ok := localBoardLayout(80, 20)
+	if !ok {
+		t.Fatal("expected board layout")
+	}
+	_, plainY := onlineSavePGNButtonPosition(layout, false)
+	_, clocksY := onlineSavePGNButtonPosition(layout, true)
+	if plainY <= layout.y+11 || clocksY <= layout.y+11 {
+		t.Fatalf("PGN buttons overlap online player rows: %d, %d", plainY, clocksY)
+	}
+	if clocksY >= 20 {
+		t.Fatalf("PGN clocks button is outside the minimum terminal: %d", clocksY)
+	}
+}
+
+func TestOnlineTerminalTitle(t *testing.T) {
+	tests := []struct {
+		state lichessapi.GameState
+		want  string
+	}{
+		{state: lichessapi.GameState{Status: "mate", Winner: "white"}, want: "Checkmate · White wins 1-0"},
+		{state: lichessapi.GameState{Status: "resign", Winner: "black"}, want: "White resigned · Black wins 0-1"},
+		{state: lichessapi.GameState{Status: "stalemate"}, want: "Stalemate · ½-½"},
+		{state: lichessapi.GameState{Status: "draw"}, want: "Draw · ½-½"},
+	}
+	for _, test := range tests {
+		game := onlineGameState{state: test.state}
+		if got := game.onlineTerminalTitle(); got != test.want {
+			t.Errorf("terminal title = %q, want %q", got, test.want)
+		}
+	}
+}
+
+func TestFinishedOnlineGameScrollsBoardHistory(t *testing.T) {
+	full := lichessapi.GameFullEvent{Game: lichessapi.Game{ID: "game", White: lichessapi.Player{ID: "me"}, Black: lichessapi.Player{ID: "opponent"}}, InitialFEN: "startpos", State: lichessapi.GameState{Moves: "e2e4 e7e5", Status: "mate", Winner: "white"}}
+	game, err := newOnlineGame(full, "me", "Me", chess.WOOD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("expected board layout")
+	}
+	game.handleMouse(tcell.NewEventMouse(layout.x, layout.y, tcell.WheelUp, tcell.ModNone), 80, 24, nil, nil)
+	if game.viewPly != 1 {
+		t.Errorf("view ply = %d, want 1 after scrolling up", game.viewPly)
 	}
 }
 

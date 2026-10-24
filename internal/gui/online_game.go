@@ -413,24 +413,43 @@ func (g *onlineGameState) handleFinishedMouse(event *tcell.EventMouse, layout bo
 	x, y := event.Position()
 	if event.Buttons() == tcell.ButtonNone {
 		g.hoveredFlip = flipButtonAt(x, y, layout)
-		g.hoveredSavePGN = savePGNButtonAt(x, y, layout, false)
-		g.hoveredSaveClocks = savePGNButtonAt(x, y, layout, true)
+		g.hoveredSavePGN = onlineSavePGNButtonAt(x, y, layout, false)
+		g.hoveredSaveClocks = onlineSavePGNButtonAt(x, y, layout, true)
 		return
 	}
-	if event.Buttons() != tcell.Button1 {
+	buttons := event.Buttons()
+	if buttons&tcell.WheelUp != 0 || buttons&tcell.WheelDown != 0 {
+		if _, ok := squareAtScreenPosition(x, y, layout, g.perspective); ok {
+			direction := 1
+			if buttons&tcell.WheelUp != 0 {
+				direction = -1
+			}
+			g.moveReplay(direction)
+			return
+		}
+		if historyAreaAt(x, y, layout) {
+			if buttons&tcell.WheelUp != 0 {
+				g.historyScroll = max(0, g.historyScroll-1)
+			} else {
+				g.historyScroll = min(g.historyMaxScroll(), g.historyScroll+1)
+			}
+		}
+		return
+	}
+	if buttons != tcell.Button1 {
 		return
 	}
 	if flipButtonAt(x, y, layout) {
 		g.flipBoard()
 		return
 	}
-	if savePGNButtonAt(x, y, layout, false) {
+	if onlineSavePGNButtonAt(x, y, layout, false) {
 		if err := g.savePGN(false); err != nil {
 			g.exportMessage = "Could not save PGN: " + err.Error()
 		}
 		return
 	}
-	if savePGNButtonAt(x, y, layout, true) {
+	if onlineSavePGNButtonAt(x, y, layout, true) {
 		if err := g.savePGN(true); err != nil {
 			g.exportMessage = "Could not save PGN: " + err.Error()
 		}
@@ -439,6 +458,7 @@ func (g *onlineGameState) handleFinishedMouse(event *tcell.EventMouse, layout bo
 	if ply, ok := g.historyPlyAt(x, y, layout); ok {
 		g.viewPly = ply
 		g.syncHistoryAfterClick(y - (layout.y + 1))
+		return
 	}
 }
 
@@ -510,7 +530,7 @@ func drawOnlineGame(screen tcell.Screen, game onlineGameState) {
 	}
 	display := game.localGameState
 	if game.isFinished() {
-		display.terminalTitle = "Online game finished"
+		display.terminalTitle = game.onlineTerminalTitle()
 	}
 	drawBoard(screen, display, layout)
 	drawMoveHistory(screen, display, layout, width)
@@ -525,10 +545,10 @@ func drawOnlineGame(screen tcell.Screen, game onlineGameState) {
 	drawString(screen, layout.x-2, layout.y+10, playerLine(bottom, bottomColor), titleStyle)
 	drawString(screen, layout.x-2, layout.y+11, formatClock(game.clockRemaining[bottomColor])+"  "+materialIndicator(game.board, bottomColor), mutedStyle)
 	if game.isFinished() {
-		drawSavePGNButton(screen, display, layout, false)
-		drawSavePGNButton(screen, display, layout, true)
+		drawOnlineSavePGNButton(screen, display, layout, false)
+		drawOnlineSavePGNButton(screen, display, layout, true)
 		if game.exportMessage != "" {
-			drawString(screen, layout.x-2, layout.y+13, game.exportMessage, mutedStyle)
+			drawString(screen, layout.x-2, layout.y+15, game.exportMessage, mutedStyle)
 		}
 		return
 	}
@@ -544,6 +564,71 @@ func drawOnlineGame(screen tcell.Screen, game onlineGameState) {
 	drawString(screen, layout.x-2, layout.y+14, message, mutedStyle)
 	drawOnlineActionButtons(screen, game, layout)
 	drawString(screen, layout.x-2, layout.y+15, "Enter: submit move", mutedStyle)
+}
+
+func (g onlineGameState) onlineTerminalTitle() string {
+	winner, hasWinner := lichessWinner(g.state.Winner)
+	switch g.state.Status {
+	case "mate":
+		if hasWinner {
+			return fmt.Sprintf("Checkmate · %s wins %s", winner, winner.EndResult())
+		}
+	case "resign":
+		if hasWinner {
+			return fmt.Sprintf("%s resigned · %s wins %s", winner.Opponent(), winner, winner.EndResult())
+		}
+	case "timeout", "outoftime":
+		if hasWinner {
+			return fmt.Sprintf("%s ran out of time · %s wins %s", winner.Opponent(), winner, winner.EndResult())
+		}
+	case "stalemate":
+		return "Stalemate · ½-½"
+	case "draw":
+		return "Draw · ½-½"
+	case "aborted", "noStart":
+		return "Game aborted"
+	case "cheat":
+		if hasWinner {
+			return fmt.Sprintf("Fair-play violation · %s wins %s", winner, winner.EndResult())
+		}
+	}
+	if hasWinner {
+		return fmt.Sprintf("%s wins %s", winner, winner.EndResult())
+	}
+	return "Game " + g.state.Status
+}
+
+func lichessWinner(winner string) (chess.PieceColor, bool) {
+	switch winner {
+	case "white":
+		return chess.White, true
+	case "black":
+		return chess.Black, true
+	default:
+		return chess.White, false
+	}
+}
+
+func drawOnlineSavePGNButton(screen tcell.Screen, game localGameState, layout boardLayout, includeClocks bool) {
+	x, y := onlineSavePGNButtonPosition(layout, includeClocks)
+	style := backgroundStyle
+	if (!includeClocks && game.hoveredSavePGN) || (includeClocks && game.hoveredSaveClocks) {
+		style = selectedStyle
+	}
+	drawString(screen, x, y, savePGNButtonLabel(includeClocks), style)
+}
+
+func onlineSavePGNButtonPosition(layout boardLayout, includeClocks bool) (int, int) {
+	y := layout.y + 13
+	if includeClocks {
+		y++
+	}
+	return layout.x - 2, y
+}
+
+func onlineSavePGNButtonAt(x, y int, layout boardLayout, includeClocks bool) bool {
+	buttonX, buttonY := onlineSavePGNButtonPosition(layout, includeClocks)
+	return y == buttonY && x >= buttonX && x < buttonX+runewidth.StringWidth(savePGNButtonLabel(includeClocks))
 }
 
 func playerLine(player lichessapi.Player, color chess.PieceColor) string {
