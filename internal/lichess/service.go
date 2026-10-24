@@ -19,7 +19,7 @@ const (
 	eventStreamURL      = "https://lichess.org/api/stream/event"
 	gameStreamURLFormat = "https://lichess.org/api/board/game/stream/%s"
 	gameURLFormat       = "https://lichess.org/api/board/game/%s"
-	gameExportURLFormat = "https://lichess.org/api/game/export/%s?pgnInJson=true"
+	gameExportURLFormat = "https://lichess.org/game/export/%s?pgnInJson=true"
 )
 
 type Service struct {

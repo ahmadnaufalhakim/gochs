@@ -170,6 +170,32 @@ func TestBoardActionsUseAuthenticatedEndpoints(t *testing.T) {
 	}
 }
 
+func TestRatingChangesExportsCompletedGame(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet {
+			t.Errorf("method = %s", request.Method)
+		}
+		if request.URL.Path != "/game/export/game-id" || request.URL.Query().Get("pgnInJson") != "true" {
+			t.Errorf("URL = %s", request.URL)
+		}
+		if request.Header.Get("Authorization") != "Bearer token" {
+			t.Errorf("authorization = %q", request.Header.Get("Authorization"))
+		}
+		_, _ = writer.Write([]byte(`{"players":{"white":{"ratingDiff":7},"black":{"ratingDiff":-7}}}`))
+	}))
+	defer server.Close()
+
+	service := NewService(server.Client(), &memoryStore{token: "token"}, "")
+	service.gameExportURL = server.URL + "/game/export/%s?pgnInJson=true"
+	changes, err := service.RatingChanges(context.Background(), "game-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changes != (RatingChanges{White: 7, Black: -7}) {
+		t.Errorf("changes = %#v", changes)
+	}
+}
+
 func TestStreamEventsParsesGameStartAndCancels(t *testing.T) {
 	started := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

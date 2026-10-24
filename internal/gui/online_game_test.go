@@ -294,6 +294,20 @@ func TestOnlineGameRendersPlayersAndServerClocks(t *testing.T) {
 	}
 }
 
+func TestOnlineGameShowsRatingChangesAfterFinish(t *testing.T) {
+	changes := lichessapi.RatingChanges{White: 0, Black: -5}
+	game := onlineGameState{
+		state:         lichessapi.GameState{Status: "resign"},
+		ratingChanges: &changes,
+	}
+	if got := game.playerLine(lichessapi.Player{Name: "White", Rating: 1600}, chess.White); got != "● White (1600) +0 -> 1600" {
+		t.Errorf("white rating line = %q", got)
+	}
+	if got := game.playerLine(lichessapi.Player{Name: "Black", Rating: 1600}, chess.Black); got != "○ Black (1600) -5 -> 1595" {
+		t.Errorf("black rating line = %q", got)
+	}
+}
+
 func TestLichessMenuStartsOnlinePlay(t *testing.T) {
 	state := menuState{page: lichessMenu, lichessAccount: &entity.LichessAccount{Username: "me"}, lichessSelected: 3}
 	state.handleKey(keyEvent(tcell.KeyEnter, 0))
