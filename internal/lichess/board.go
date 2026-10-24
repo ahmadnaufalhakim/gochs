@@ -45,6 +45,7 @@ type Seek struct {
 	TimeSeconds      int
 	IncrementSeconds int
 	Color            SeekColor
+	Rated            bool
 }
 
 type Event interface {
@@ -120,7 +121,7 @@ func (s *Service) CreateSeek(ctx context.Context, seek Seek) error {
 		"time":      {fmt.Sprintf("%d", seek.TimeSeconds/60)},
 		"increment": {fmt.Sprintf("%d", seek.IncrementSeconds)},
 		"color":     {string(seek.Color)},
-		"rated":     {"false"},
+		"rated":     {fmt.Sprintf("%t", seek.Rated)},
 		"variant":   {"standard"},
 	}
 	response, err := s.streamRequest(ctx, http.MethodPost, s.seekURL, strings.NewReader(values.Encode()), "application/x-www-form-urlencoded")

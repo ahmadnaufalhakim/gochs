@@ -103,6 +103,25 @@ func TestCreateSeekSendsCasualStandardForm(t *testing.T) {
 	}
 }
 
+func TestCreateSeekSendsRatedForm(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if err := request.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		if got := request.PostForm.Get("rated"); got != "true" {
+			t.Errorf("rated = %q, want true", got)
+		}
+		_, _ = writer.Write([]byte("\n"))
+	}))
+	defer server.Close()
+
+	service := NewService(server.Client(), &memoryStore{token: "token"}, "")
+	service.seekURL = server.URL
+	if err := service.CreateSeek(context.Background(), Seek{TimeSeconds: 300, IncrementSeconds: 5, Color: SeekRandom, Rated: true}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCreateSeekWaitsPastRegularClientTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		time.Sleep(40 * time.Millisecond)

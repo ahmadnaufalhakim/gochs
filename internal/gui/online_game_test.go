@@ -127,6 +127,18 @@ func TestOnlineButtonsHoverAndCancelResign(t *testing.T) {
 	if !game.resignPending {
 		t.Fatal("first resign click did not request confirmation")
 	}
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 24)
+	drawOnlineGame(screen, game)
+	screen.Show()
+	cells, screenWidth, screenHeight := screen.GetContents()
+	if !strings.Contains(screenText(cells, screenWidth, screenHeight), "Are you sure?") {
+		t.Fatal("online resign confirmation was not rendered")
+	}
 	game.handleMouse(tcell.NewEventMouse(layout.x, layout.y, tcell.Button1, tcell.ModNone), 80, 24, nil, nil)
 	if game.resignPending {
 		t.Fatal("clicking elsewhere did not cancel resign confirmation")
@@ -311,8 +323,13 @@ func TestOnlineGameShowsRatingChangesAfterFinish(t *testing.T) {
 func TestLichessMenuStartsOnlinePlay(t *testing.T) {
 	state := menuState{page: lichessMenu, lichessAccount: &entity.LichessAccount{Username: "me"}, lichessSelected: 3}
 	state.handleKey(keyEvent(tcell.KeyEnter, 0))
-	if state.page != timeControlMenu || !state.onlineGame {
+	if state.page != onlineGameTypeMenu || !state.onlineGame || state.onlineRated {
 		t.Errorf("online activation = %#v", state)
+	}
+	state.handleKey(keyEvent(tcell.KeyDown, 0))
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if state.page != timeControlMenu || !state.onlineRated {
+		t.Errorf("rated game type = %#v", state)
 	}
 }
 

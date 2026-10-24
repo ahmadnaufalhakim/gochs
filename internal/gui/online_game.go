@@ -32,7 +32,6 @@ type onlineGameState struct {
 	white, black    lichessapi.Player
 	state           lichessapi.GameState
 	pendingMove     bool
-	resignPending   bool
 	clockUpdated    time.Time
 	requestContext  context.Context
 	pendingDraw     bool
@@ -70,8 +69,12 @@ func startOnlineSeek(menu *menuState, service OnlineBoardService, results chan<-
 	*cancel = newCancel
 	menu.page = lichessLoading
 	menu.onlineSeeking = true
-	menu.lichessMessage = "Waiting for an opponent... Esc to cancel"
-	seek := lichessapi.Seek{TimeSeconds: int(menu.timeControl.initial.Seconds()), IncrementSeconds: int(menu.timeControl.increment.Seconds()), Color: menu.onlineColor}
+	gameType := "Casual"
+	if menu.onlineRated {
+		gameType = "Rated"
+	}
+	menu.lichessMessage = gameType + " game: waiting for an opponent... Esc to cancel"
+	seek := lichessapi.Seek{TimeSeconds: int(menu.timeControl.initial.Seconds()), IncrementSeconds: int(menu.timeControl.increment.Seconds()), Color: menu.onlineColor, Rated: menu.onlineRated}
 	go func() {
 		events, errors := service.StreamEvents(ctx)
 		go func() {

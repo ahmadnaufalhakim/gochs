@@ -25,6 +25,7 @@ const (
 	stockfishColorMenu
 	stockfishDifficultyMenu
 	stockfishUnavailable
+	onlineGameTypeMenu
 	onlineColorMenu
 	lichessMenu
 	lichessToken
@@ -102,6 +103,8 @@ type menuState struct {
 	stockfishDifficulty  int
 	stockfishGame        bool
 	onlineGame           bool
+	onlineRated          bool
+	onlineGameTypeSelect int
 	onlineColor          lichessapi.SeekColor
 	onlineSeeking        bool
 	onlineSeekGeneration uint64
@@ -260,7 +263,7 @@ func (s *menuState) handleKey(event *tcell.EventKey) bool {
 			return s.activateTimeControl()
 		case tcell.KeyEsc:
 			if s.onlineGame {
-				s.page = lichessMenu
+				s.page = onlineGameTypeMenu
 			} else {
 				s.page = playMenu
 			}
@@ -294,6 +297,17 @@ func (s *menuState) handleKey(event *tcell.EventKey) bool {
 	case stockfishUnavailable:
 		if event.Key() == tcell.KeyEnter || event.Key() == tcell.KeyEsc {
 			s.page = playMenu
+		}
+	case onlineGameTypeMenu:
+		switch event.Key() {
+		case tcell.KeyUp, tcell.KeyDown:
+			s.onlineGameTypeSelect = 1 - s.onlineGameTypeSelect
+		case tcell.KeyEnter:
+			s.onlineRated = s.onlineGameTypeSelect == 1
+			s.page = timeControlMenu
+			s.timeControlSelected = onlineTimeControlStart
+		case tcell.KeyEsc:
+			s.page = lichessMenu
 		}
 	case onlineColorMenu:
 		switch event.Key() {
@@ -435,6 +449,16 @@ func (s *menuState) handleMouse(event *tcell.EventMouse, width, height int) bool
 			s.stockfishColor = color
 			if event.Buttons() == tcell.Button1 {
 				s.page = stockfishDifficultyMenu
+			}
+		}
+	case onlineGameTypeMenu:
+		gameType, ok := onlineGameTypeAt(x, y, width, height)
+		if ok {
+			s.onlineGameTypeSelect = gameType
+			if event.Buttons() == tcell.Button1 {
+				s.onlineRated = gameType == 1
+				s.page = timeControlMenu
+				s.timeControlSelected = onlineTimeControlStart
 			}
 		}
 	case onlineColorMenu:
@@ -617,6 +641,8 @@ func draw(screen tcell.Screen, state menuState) {
 		drawStockfishDifficultyMenu(screen, state)
 	case stockfishUnavailable:
 		drawStockfishUnavailable(screen)
+	case onlineGameTypeMenu:
+		drawOnlineGameTypeMenu(screen, state)
 	case onlineColorMenu:
 		drawOnlineColorMenu(screen, state)
 	case lichessMenu:
@@ -681,8 +707,9 @@ func (s *menuState) activateLichessMenuItem() {
 		}
 		s.onlineGame = true
 		s.stockfishGame = false
-		s.page = timeControlMenu
-		s.timeControlSelected = onlineTimeControlStart
+		s.onlineRated = false
+		s.onlineGameTypeSelect = 0
+		s.page = onlineGameTypeMenu
 	case 4:
 		s.showMainMenu()
 	}
@@ -1042,6 +1069,31 @@ func lichessMenuItemAt(x, y, width, height int, connected bool) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+var onlineGameTypeLabels = []string{"Casual - no rating change", "Rated - affects your Lichess rating"}
+
+func drawOnlineGameTypeMenu(screen tcell.Screen, state menuState) {
+	width, height := screen.Size()
+	layout := simpleMenuLayout(width, height, onlineGameTypeLabels)
+	drawCentered(screen, layout.y-3, "Lichess > Play online", titleStyle)
+	drawCentered(screen, layout.y-2, "Select game type", mutedStyle)
+	for index, label := range onlineGameTypeLabels {
+		style := backgroundStyle
+		if state.onlineGameTypeSelect == index {
+			style = selectedStyle
+		}
+		drawPaddedString(screen, layout.x, layout.y+index, layout.width, label, style)
+	}
+	drawCentered(screen, layout.y+len(onlineGameTypeLabels)+1, "Up/Down to select  Enter to choose", mutedStyle)
+}
+
+func onlineGameTypeAt(x, y, width, height int) (int, bool) {
+	layout := simpleMenuLayout(width, height, onlineGameTypeLabels)
+	if x < layout.x || x >= layout.x+layout.width || y < layout.y || y >= layout.y+len(onlineGameTypeLabels) {
+		return 0, false
+	}
+	return y - layout.y, true
 }
 
 var onlineColorLabels = []string{"Play as White", "Play as Black", "Play as Random"}
