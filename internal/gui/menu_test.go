@@ -371,7 +371,7 @@ func TestTimeControlMenuIsCentered(t *testing.T) {
 	if !strings.Contains(lines[25], "Up/Down to select  Enter to choose") {
 		t.Errorf("time-control hint line = %q", lines[25])
 	}
-	if choice, ok := timeControlChoiceAt(width/2, 8, width, height); !ok || choice != 0 {
+	if choice, ok := timeControlChoiceAt(width/2, 8, width, height, false); !ok || choice != 0 {
 		t.Errorf("centered first choice = %d, %t; want 0, true", choice, ok)
 	}
 }

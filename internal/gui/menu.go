@@ -8,6 +8,7 @@ import (
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	"github.com/ahmadnaufalhakim/gochs/internal/entity"
+	lichessapi "github.com/ahmadnaufalhakim/gochs/internal/lichess"
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
 )
@@ -24,6 +25,7 @@ const (
 	stockfishColorMenu
 	stockfishDifficultyMenu
 	stockfishUnavailable
+	onlineColorMenu
 	lichessMenu
 	lichessToken
 	lichessSyncConfirmation
@@ -99,6 +101,11 @@ type menuState struct {
 	stockfishColor       stockfishColor
 	stockfishDifficulty  int
 	stockfishGame        bool
+	onlineGame           bool
+	onlineColor          lichessapi.SeekColor
+	onlineSeeking        bool
+	onlineSeekGeneration uint64
+	onlineActive         bool
 	lichessAccount       *entity.LichessAccount
 	lichessSelected      int
 	lichessToken         string
@@ -252,7 +259,11 @@ func (s *menuState) handleKey(event *tcell.EventKey) bool {
 		case tcell.KeyEnter:
 			return s.activateTimeControl()
 		case tcell.KeyEsc:
-			s.page = playMenu
+			if s.onlineGame {
+				s.page = lichessMenu
+			} else {
+				s.page = playMenu
+			}
 		}
 	case customTimeControlMenu:
 		return s.handleCustomTimeControlKey(event)
@@ -284,8 +295,23 @@ func (s *menuState) handleKey(event *tcell.EventKey) bool {
 		if event.Key() == tcell.KeyEnter || event.Key() == tcell.KeyEsc {
 			s.page = playMenu
 		}
+	case onlineColorMenu:
+		switch event.Key() {
+		case tcell.KeyUp:
+			s.moveOnlineColor(-1)
+		case tcell.KeyDown:
+			s.moveOnlineColor(1)
+		case tcell.KeyEnter:
+			s.result = OnlineGame
+			return true
+		case tcell.KeyEsc:
+			s.page = timeControlMenu
+		}
 	case lichessMenu:
 		s.handleLichessMenuKey(event)
+		if s.result == OnlineGame {
+			return true
+		}
 	case lichessToken:
 		s.handleLichessTokenKey(event)
 	case lichessSyncConfirmation:
@@ -387,7 +413,7 @@ func (s *menuState) handleMouse(event *tcell.EventMouse, width, height int) bool
 			}
 		}
 	case timeControlMenu:
-		item, ok := timeControlChoiceAt(x, y, width, height)
+		item, ok := timeControlChoiceAt(x, y, width, height, s.onlineGame)
 		if ok {
 			s.timeControlSelected = item
 			if event.Buttons() == tcell.Button1 {
@@ -411,12 +437,24 @@ func (s *menuState) handleMouse(event *tcell.EventMouse, width, height int) bool
 				s.page = stockfishDifficultyMenu
 			}
 		}
+	case onlineColorMenu:
+		color, ok := onlineColorAt(x, y, width, height)
+		if ok {
+			s.onlineColor = color
+			if event.Buttons() == tcell.Button1 {
+				s.result = OnlineGame
+				return true
+			}
+		}
 	case lichessMenu:
 		item, ok := lichessMenuItemAt(x, y, width, height, s.lichessAccount != nil)
 		if ok {
 			s.lichessSelected = item
 			if event.Buttons() == tcell.Button1 {
 				s.activateLichessMenuItem()
+				if s.result == OnlineGame {
+					return true
+				}
 			}
 		}
 	case optionsMenu:
@@ -529,6 +567,7 @@ func (s *menuState) activate(item menuItem) {
 func (s *menuState) activatePlayItem(item playMenuItem) {
 	switch item {
 	case localGame:
+		s.onlineGame = false
 		s.stockfishGame = false
 		s.page = timeControlMenu
 		s.timeControlSelected = 0
@@ -547,6 +586,7 @@ func (s *menuState) activatePlayItem(item playMenuItem) {
 
 func (s *menuState) showMainMenu() {
 	s.page = mainMenu
+	s.onlineGame = false
 	s.splashIndex = rand.Intn(len(pieceSplashes))
 }
 
@@ -577,6 +617,8 @@ func draw(screen tcell.Screen, state menuState) {
 		drawStockfishDifficultyMenu(screen, state)
 	case stockfishUnavailable:
 		drawStockfishUnavailable(screen)
+	case onlineColorMenu:
+		drawOnlineColorMenu(screen, state)
 	case lichessMenu:
 		drawLichessMenu(screen, state)
 	case lichessToken:
@@ -595,7 +637,7 @@ func draw(screen tcell.Screen, state menuState) {
 func (s *menuState) handleLichessMenuKey(event *tcell.EventKey) {
 	count := 2
 	if s.lichessAccount != nil {
-		count = 4
+		count = 5
 	}
 	switch event.Key() {
 	case tcell.KeyUp:
@@ -633,6 +675,15 @@ func (s *menuState) activateLichessMenuItem() {
 		s.offlineRatingMessage = ""
 		s.page = lichessSyncConfirmation
 	case 3:
+		if s.onlineActive {
+			s.result = OnlineGame
+			return
+		}
+		s.onlineGame = true
+		s.stockfishGame = false
+		s.page = timeControlMenu
+		s.timeControlSelected = onlineTimeControlStart
+	case 4:
 		s.showMainMenu()
 	}
 }
@@ -770,7 +821,7 @@ func drawLichessMenu(screen tcell.Screen, state menuState) {
 	drawCentered(screen, height/2-2, fmt.Sprintf("Puzzle     %s", ratingLabel(account.Puzzle)), backgroundStyle)
 	drawCentered(screen, height/2, fmt.Sprintf("Games      %d       %d W / %d D / %d L", account.Games, account.Wins, account.Draws, account.Losses), backgroundStyle)
 	drawCentered(screen, height/2+1, fmt.Sprintf("Play time  %s       Member since %s", durationLabel(account.PlayTime), dateLabel(account.MemberSince)), backgroundStyle)
-	labels := []string{"Refresh", "Disconnect", "Sync puzzle rating", "Back"}
+	labels := []string{"Refresh", "Disconnect", "Sync puzzle rating", "Play online", "Back"}
 	drawLichessActions(screen, labels, state.lichessSelected, height/2+3)
 	if account.FromEnvironment {
 		drawCentered(screen, height/2+7, "Using GOCHS_LICHESS_TOKEN", mutedStyle)
@@ -975,7 +1026,7 @@ func menuItemAt(x, y, width, height, splashHeight int) (menuItem, bool) {
 func lichessMenuItemAt(x, y, width, height int, connected bool) (int, bool) {
 	labels := []string{"Connect with token", "Back"}
 	if connected {
-		labels = []string{"Refresh", "Disconnect", "Sync puzzle rating", "Back"}
+		labels = []string{"Refresh", "Disconnect", "Sync puzzle rating", "Play online", "Back"}
 	}
 	menuY := height / 2
 	if connected {
@@ -991,6 +1042,48 @@ func lichessMenuItemAt(x, y, width, height int, connected bool) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+var onlineColorLabels = []string{"Play as White", "Play as Black", "Play as Random"}
+
+func (s *menuState) moveOnlineColor(delta int) {
+	colors := []lichessapi.SeekColor{lichessapi.SeekWhite, lichessapi.SeekBlack, lichessapi.SeekRandom}
+	index := 0
+	for i, color := range colors {
+		if s.onlineColor == color {
+			index = i
+		}
+	}
+	s.onlineColor = colors[(index+delta+len(colors))%len(colors)]
+}
+
+func drawOnlineColorMenu(screen tcell.Screen, state menuState) {
+	width, height := screen.Size()
+	layout := simpleMenuLayout(width, height, onlineColorLabels)
+	drawCentered(screen, layout.y-3, "Lichess > Play online", titleStyle)
+	drawCentered(screen, layout.y-2, "Select your color", mutedStyle)
+	colors := []lichessapi.SeekColor{lichessapi.SeekWhite, lichessapi.SeekBlack, lichessapi.SeekRandom}
+	for i, label := range onlineColorLabels {
+		style := backgroundStyle
+		if state.onlineColor == colors[i] {
+			style = selectedStyle
+		}
+		drawPaddedString(screen, layout.x, layout.y+i, layout.width, label, style)
+	}
+}
+
+func onlineColorAt(x, y, width, height int) (lichessapi.SeekColor, bool) {
+	layout := simpleMenuLayout(width, height, onlineColorLabels)
+	if x < layout.x || x >= layout.x+layout.width {
+		return "", false
+	}
+	colors := []lichessapi.SeekColor{lichessapi.SeekWhite, lichessapi.SeekBlack, lichessapi.SeekRandom}
+	for i := range colors {
+		if y == layout.y+i {
+			return colors[i], true
+		}
+	}
+	return "", false
 }
 
 func playMenuItemAt(x, y, width, height int) (playMenuItem, bool) {

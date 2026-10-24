@@ -27,6 +27,7 @@ const (
 	LocalGame
 	StockfishGame
 	Puzzle
+	OnlineGame
 )
 
 type PuzzleLoader func() (entity.Puzzle, error)
@@ -40,8 +41,19 @@ type LichessAccountService interface {
 	Disconnect() error
 }
 
+// OnlineBoardService contains only the authenticated board endpoints used by the UI.
+type OnlineBoardService interface {
+	CreateSeek(context.Context, lichessapi.Seek) error
+	StreamEvents(context.Context) (<-chan lichessapi.Event, <-chan error)
+	StreamGame(context.Context, string) (<-chan lichessapi.GameEvent, <-chan error)
+	MakeMove(context.Context, string, string) error
+	Resign(context.Context, string) error
+	SetDraw(context.Context, string, bool) error
+	SetTakeback(context.Context, string, bool) error
+}
+
 // Run starts the terminal user interface.
-func Run(loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, syncLichessRating LichessRatingSynchronizer, loadOfflinePuzzleRating OfflinePuzzleRatingLoader, stockfishPath string, lichessService LichessAccountService) (Result, error) {
+func Run(loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, syncLichessRating LichessRatingSynchronizer, loadOfflinePuzzleRating OfflinePuzzleRatingLoader, stockfishPath string, lichessService LichessAccountService, onlineService OnlineBoardService) (Result, error) {
 	screen, err := tcell.NewScreen()
 	if err != nil {
 		return Exit, fmt.Errorf("create terminal screen: %w", err)
@@ -54,14 +66,16 @@ func Run(loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, syn
 	screen.SetStyle(backgroundStyle)
 	screen.EnableMouse(tcell.MouseButtonEvents, tcell.MouseMotionEvents)
 
-	return run(screen, loadPuzzle, recordPuzzleAttempt, syncLichessRating, loadOfflinePuzzleRating, stockfishPath, lichessService), nil
+	return run(screen, loadPuzzle, recordPuzzleAttempt, syncLichessRating, loadOfflinePuzzleRating, stockfishPath, lichessService, onlineService), nil
 }
 
-func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, syncLichessRating LichessRatingSynchronizer, loadOfflinePuzzleRating OfflinePuzzleRatingLoader, stockfishPath string, lichessService LichessAccountService) Result {
+func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, syncLichessRating LichessRatingSynchronizer, loadOfflinePuzzleRating OfflinePuzzleRatingLoader, stockfishPath string, lichessService LichessAccountService, onlineService OnlineBoardService) Result {
 	state := newMenuState()
 	state.stockfishPath = stockfishPath
 	var game *localGameState
 	var puzzle *puzzleState
+	var online *onlineGameState
+	onlineVisible := false
 	events := make(chan tcell.Event)
 	quitEvents := make(chan struct{})
 	defer close(quitEvents)
@@ -69,13 +83,23 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 	clockTicker := time.NewTicker(100 * time.Millisecond)
 	defer clockTicker.Stop()
 	lichessResults := make(chan lichessResult, 1)
+	onlineResults := make(chan onlineResult, 8)
+	var onlineCancel context.CancelFunc
+	var onlineContext context.Context
+	defer func() {
+		if onlineCancel != nil {
+			onlineCancel()
+		}
+	}()
 
 	for {
 		screen.Clear()
-		if game == nil && puzzle == nil {
+		if game == nil && puzzle == nil && !onlineVisible {
 			draw(screen, state)
 		} else if game != nil {
 			drawLocalGame(screen, *game)
+		} else if online != nil {
+			drawOnlineGame(screen, *online)
 		} else {
 			drawPuzzle(screen, *puzzle)
 		}
@@ -95,12 +119,38 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 				state.applyLichessResult(result)
 				loadOfflineRating(&state, loadOfflinePuzzleRating)
 			}
+		case result := <-onlineResults:
+			if online == nil {
+				if full, ok := result.event.(lichessapi.GameFullEvent); ok {
+					newOnline, err := newOnlineGame(full, result.accountID, result.accountName, state.theme)
+					if err != nil {
+						state.page = lichessMenu
+						state.lichessMessage = err.Error()
+					} else {
+						online = newOnline
+						online.requestContext = onlineContext
+						onlineVisible = true
+						state.onlineActive = true
+						state.onlineGame = false
+					}
+				} else {
+					onlineContext = applyOnlineSeekResult(&state, result, onlineService, onlineResults, &onlineCancel)
+				}
+			} else {
+				online.apply(result)
+				if online.isFinished() && onlineCancel != nil {
+					onlineCancel()
+				}
+			}
 		case now := <-clockTicker.C:
 			if game != nil {
 				game.advanceClock(now)
 			}
 			if puzzle != nil {
 				puzzle.advance(now)
+			}
+			if online != nil {
+				online.advanceClock(now)
 			}
 			continue
 		case rawEvent, ok := <-events:
@@ -111,6 +161,19 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 			case *tcell.EventResize:
 				screen.Sync()
 			case *tcell.EventKey:
+				if online != nil && onlineVisible {
+					if online.handleKey(event, onlineService, onlineResults) {
+						if online.state.Status == "started" {
+							onlineVisible = false
+						} else {
+							online = nil
+							onlineVisible = false
+							state.onlineActive = false
+						}
+						state.showMainMenu()
+					}
+					continue
+				}
 				if game != nil {
 					width, height := screen.Size()
 					if game.handleKey(event, width, height) {
@@ -153,6 +216,16 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 						}
 						game = &newGame
 						state.result = Exit
+					} else if state.result == OnlineGame {
+						if online != nil {
+							onlineVisible = true
+						} else if onlineService == nil || state.lichessAccount == nil {
+							state.message = "Lichess online play is unavailable"
+							state.showMainMenu()
+						} else {
+							startOnlineSeek(&state, onlineService, onlineResults, &onlineCancel)
+						}
+						state.result = Exit
 					} else if state.result == Puzzle {
 						puzzle = startPuzzle(loadPuzzle, recordPuzzleAttempt, state.theme, &state)
 						state.result = Exit
@@ -160,12 +233,23 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 						return state.result
 					}
 				}
+				if state.onlineSeeking && state.page != lichessLoading {
+					if onlineCancel != nil {
+						onlineCancel()
+					}
+					state.onlineSeeking = false
+					state.onlineSeekGeneration++
+				}
 				startLichessAction(&state, lichessService, syncLichessRating, lichessResults)
 				loadOfflineRating(&state, loadOfflinePuzzleRating)
 			case *tcell.EventMouse:
 				width, height := screen.Size()
 				if game != nil {
 					game.handleMouse(event, width, height)
+					continue
+				}
+				if online != nil && onlineVisible {
+					online.handleMouse(event, width, height, onlineService, onlineResults)
 					continue
 				}
 				if puzzle != nil {
@@ -195,6 +279,16 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 							}
 						}
 						game = &newGame
+						state.result = Exit
+					} else if state.result == OnlineGame {
+						if online != nil {
+							onlineVisible = true
+						} else if onlineService == nil || state.lichessAccount == nil {
+							state.message = "Lichess online play is unavailable"
+							state.showMainMenu()
+						} else {
+							startOnlineSeek(&state, onlineService, onlineResults, &onlineCancel)
+						}
 						state.result = Exit
 					} else if state.result == Puzzle {
 						puzzle = startPuzzle(loadPuzzle, recordPuzzleAttempt, state.theme, &state)

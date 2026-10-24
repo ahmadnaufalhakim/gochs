@@ -21,8 +21,12 @@ make stockfish-cli
 ## Lichess Profile
 
 Select `Lichess` in the main menu to connect an account with a Lichess Personal
-API Token. Create a token with only the account/profile permissions required by
-the Lichess API; Gochs does not play online games yet.
+API Token. To play casual Standard games online, create a token with the
+`board:play` scope (and the account/profile scope used to load your profile).
+Choose `Play online` from the connected Lichess menu, select a timed preset and
+color, then wait for an opponent. The Lichess Board API supports Rapid and
+Classical time controls. Online games support moves by board click or
+UCI input, manual board flipping, resigning, draw offers, and takeback requests.
 
 Alternatively, provide a token for the current session without saving it:
 

@@ -35,7 +35,7 @@ func Run() error {
 		}
 		return training.ActiveProfile()
 	}
-	result, err := gui.Run(loadPuzzle, recordPuzzleAttempt, syncLichessRating, loadOfflinePuzzleRating, stockfishPath, lichessService)
+	result, err := gui.Run(loadPuzzle, recordPuzzleAttempt, syncLichessRating, loadOfflinePuzzleRating, stockfishPath, lichessService, lichessService)
 	if err != nil {
 		return err
 	}

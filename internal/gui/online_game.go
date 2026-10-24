@@ -1,0 +1,565 @@
+package gui
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+	"unicode"
+
+	"github.com/ahmadnaufalhakim/gochs/internal/chess"
+	lichessapi "github.com/ahmadnaufalhakim/gochs/internal/lichess"
+	"github.com/gdamore/tcell/v2"
+	"github.com/mattn/go-runewidth"
+)
+
+type onlineResult struct {
+	gameStart              *lichessapi.Game
+	event                  lichessapi.GameEvent
+	err                    error
+	action                 string
+	seekGeneration         uint64
+	accountID, accountName string
+}
+
+type onlineGameState struct {
+	localGameState
+	gameID          string
+	me              chess.PieceColor
+	white, black    lichessapi.Player
+	state           lichessapi.GameState
+	pendingMove     bool
+	resignPending   bool
+	clockUpdated    time.Time
+	requestContext  context.Context
+	pendingDraw     bool
+	pendingTakeback bool
+	offerAnimation  uint8
+	hoveredDraw     bool
+	hoveredTakeback bool
+}
+
+func startOnlineSeek(menu *menuState, service OnlineBoardService, results chan<- onlineResult, cancel *context.CancelFunc) {
+	menu.onlineSeekGeneration++
+	generation := menu.onlineSeekGeneration
+	if *cancel != nil {
+		(*cancel)()
+	}
+	ctx, newCancel := context.WithCancel(context.Background())
+	*cancel = newCancel
+	menu.page = lichessLoading
+	menu.onlineSeeking = true
+	menu.lichessMessage = "Waiting for an opponent... Esc to cancel"
+	seek := lichessapi.Seek{TimeSeconds: int(menu.timeControl.initial.Seconds()), IncrementSeconds: int(menu.timeControl.increment.Seconds()), Color: menu.onlineColor}
+	go func() {
+		events, errors := service.StreamEvents(ctx)
+		go func() {
+			if err := service.CreateSeek(ctx, seek); err != nil && ctx.Err() == nil {
+				sendOnlineResult(ctx, results, onlineResult{err: err, seekGeneration: generation})
+			}
+		}()
+		for events != nil || errors != nil {
+			select {
+			case event, ok := <-events:
+				if !ok {
+					events = nil
+					continue
+				}
+				if started, ok := event.(lichessapi.GameStartEvent); ok {
+					sendOnlineResult(ctx, results, onlineResult{gameStart: &started.Game, seekGeneration: generation})
+					return
+				}
+			case err, ok := <-errors:
+				if !ok {
+					errors = nil
+					continue
+				}
+				if err != nil && ctx.Err() == nil {
+					sendOnlineResult(ctx, results, onlineResult{err: err, seekGeneration: generation})
+				}
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+func applyOnlineSeekResult(menu *menuState, result onlineResult, service OnlineBoardService, results chan<- onlineResult, cancel *context.CancelFunc) context.Context {
+	if result.seekGeneration != menu.onlineSeekGeneration {
+		return nil
+	}
+	if result.err != nil {
+		if *cancel != nil {
+			(*cancel)()
+		}
+		menu.onlineSeekGeneration++
+		menu.onlineSeeking = false
+		menu.page = lichessMenu
+		menu.lichessMessage = result.err.Error()
+		return nil
+	}
+	if result.gameStart == nil || menu.lichessAccount == nil {
+		return nil
+	}
+	menu.onlineSeeking = false
+	ctx, newCancel := context.WithCancel(context.Background())
+	if *cancel != nil {
+		(*cancel)()
+	}
+	*cancel = newCancel
+	game := *result.gameStart
+	go streamOnlineGame(ctx, service, game.ID, menu.lichessAccount.ID, menu.lichessAccount.Username, results)
+	return ctx
+}
+
+func sendOnlineResult(ctx context.Context, results chan<- onlineResult, result onlineResult) bool {
+	select {
+	case results <- result:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func streamOnlineGame(ctx context.Context, service OnlineBoardService, gameID, accountID, accountName string, results chan<- onlineResult) {
+	for {
+		events, errors := service.StreamGame(ctx, gameID)
+		for events != nil || errors != nil {
+			select {
+			case event, ok := <-events:
+				if !ok {
+					events = nil
+					continue
+				}
+				if !sendOnlineResult(ctx, results, onlineResult{event: event, accountID: accountID, accountName: accountName}) {
+					return
+				}
+			case err, ok := <-errors:
+				if !ok {
+					errors = nil
+					continue
+				}
+				if err != nil {
+					select {
+					case results <- onlineResult{action: "reconnecting", err: fmt.Errorf("Lichess game stream: %w", err)}:
+					case <-ctx.Done():
+						return
+					}
+				}
+				events = nil
+				errors = nil
+			}
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		if !sendOnlineResult(ctx, results, onlineResult{action: "reconnecting"}) {
+			return
+		}
+		timer := time.NewTimer(2 * time.Second)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return
+		}
+	}
+}
+
+func newOnlineGame(full lichessapi.GameFullEvent, accountID, accountName string, theme chess.ColorTheme) (*onlineGameState, error) {
+	var board chess.Board
+	if full.InitialFEN == "startpos" || full.InitialFEN == "" {
+		board.Reset()
+	} else {
+		var err error
+		board, err = chess.ParseFEN(full.InitialFEN)
+		if err != nil {
+			return nil, err
+		}
+	}
+	game := &onlineGameState{gameID: full.Game.ID, white: full.Game.White, black: full.Game.Black, state: full.State}
+	game.localGameState = newLocalGameState(theme)
+	game.board = board
+	game.positions = []chess.Board{board}
+	if !sameLichessPlayer(full.Game.White, accountID, accountName) && !sameLichessPlayer(full.Game.Black, accountID, accountName) {
+		return nil, fmt.Errorf("Lichess game does not include the connected account")
+	}
+	game.me, game.perspective = chess.White, chess.White
+	if sameLichessPlayer(full.Game.Black, accountID, accountName) {
+		game.me, game.perspective = chess.Black, chess.Black
+	}
+	if err := game.rebuild(full.State); err != nil {
+		return nil, err
+	}
+	return game, nil
+}
+
+func sameLichessPlayer(player lichessapi.Player, id, name string) bool {
+	return (id != "" && strings.EqualFold(player.ID, id)) || (name != "" && strings.EqualFold(player.Name, name))
+}
+
+func (g *onlineGameState) rebuild(state lichessapi.GameState) error {
+	initial := g.positions[0]
+	board := initial
+	moves, err := chess.ParseUCIMoves(board, state.Moves)
+	if err != nil {
+		return err
+	}
+	g.moves = moves
+	g.history = nil
+	g.positions = []chess.Board{initial}
+	board = initial
+	for _, move := range moves {
+		san, err := board.SAN(move)
+		if err != nil {
+			return err
+		}
+		if err := board.MakeMove(move); err != nil {
+			return err
+		}
+		g.history = append(g.history, san)
+		g.positions = append(g.positions, board)
+	}
+	g.board = board
+	if len(moves) > 0 {
+		g.lastMove = moves[len(moves)-1]
+		g.hasLastMove = true
+	} else {
+		g.lastMove = chess.Move(0)
+		g.hasLastMove = false
+	}
+	g.viewPly = len(moves)
+	g.terminalTitle = ""
+	g.drawReason = ""
+	g.timedOutBy = nil
+	g.resignedBy = nil
+	g.state = state
+	g.pendingMove = false
+	if !g.ownDrawOffer() {
+		g.pendingDraw = false
+	}
+	if !g.ownTakebackRequest() {
+		g.pendingTakeback = false
+	}
+	g.clockRemaining[chess.White] = time.Duration(state.WhiteTime) * time.Millisecond
+	g.clockRemaining[chess.Black] = time.Duration(state.BlackTime) * time.Millisecond
+	g.clockUpdated = time.Now()
+	return nil
+}
+
+func (g *onlineGameState) advanceClock(now time.Time) {
+	if !g.isInProgress() || g.clockUpdated.IsZero() {
+		return
+	}
+	elapsed := now.Sub(g.clockUpdated)
+	if elapsed <= 0 {
+		return
+	}
+	color := g.board.ColorToMove
+	if elapsed >= g.clockRemaining[color] {
+		g.clockRemaining[color] = 0
+	} else {
+		g.clockRemaining[color] -= elapsed
+	}
+	g.clockUpdated = now
+	if g.pendingDraw || g.pendingTakeback {
+		g.offerAnimation = (g.offerAnimation + 1) % 3
+	}
+}
+
+func (g onlineGameState) isInProgress() bool {
+	return g.state.Status == "created" || g.state.Status == "started"
+}
+
+func (g onlineGameState) isFinished() bool {
+	return !g.isInProgress()
+}
+
+func (g *onlineGameState) apply(result onlineResult) {
+	if result.err != nil {
+		if result.action == "move" {
+			g.pendingMove = false
+		}
+		if result.action == "draw" {
+			g.pendingDraw = false
+		}
+		if result.action == "takeback" {
+			g.pendingTakeback = false
+		}
+		g.message = result.err.Error()
+		return
+	}
+	switch event := result.event.(type) {
+	case lichessapi.GameFullEvent:
+		// Full events establish both the authoritative starting position and players.
+		if next, err := newOnlineGame(event, result.accountID, result.accountName, g.theme); err != nil {
+			g.message = err.Error()
+		} else {
+			next.perspective = g.perspective
+			*g = *next
+		}
+	case lichessapi.GameStateEvent:
+		if err := g.rebuild(event.State); err != nil {
+			g.message = err.Error()
+		}
+	case nil:
+		if result.action == "reconnecting" {
+			g.message = "Reconnecting to Lichess..."
+		}
+	}
+}
+
+func (g *onlineGameState) handleKey(event *tcell.EventKey, service OnlineBoardService, results chan<- onlineResult) bool {
+	if g.isFinished() {
+		return event.Key() == tcell.KeyEsc
+	}
+	if g.state.WhiteDraw && g.me == chess.Black || g.state.BlackDraw && g.me == chess.White {
+		return g.handleOfferKey(event, service, results, "draw")
+	}
+	if g.state.WhiteTakeback && g.me == chess.Black || g.state.BlackTakeback && g.me == chess.White {
+		return g.handleOfferKey(event, service, results, "takeback")
+	}
+	switch event.Key() {
+	case tcell.KeyEsc:
+		return false
+	case tcell.KeyEnter:
+		g.submitMove(service, results)
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		if len(g.uciInput) > 0 {
+			g.uciInput = g.uciInput[:len(g.uciInput)-1]
+		}
+	case tcell.KeyRune:
+		c := unicode.ToLower(event.Rune())
+		if (c >= 'a' && c <= 'h') || (c >= '1' && c <= '8') || strings.ContainsRune("qrbn", c) {
+			g.uciInput += string(c)
+		}
+	}
+	return false
+}
+
+func (g *onlineGameState) handleMouse(event *tcell.EventMouse, width, height int, service OnlineBoardService, results chan<- onlineResult) {
+	x, y := event.Position()
+	layout, ok := localBoardLayout(width, height)
+	if !ok {
+		return
+	}
+	if g.isFinished() {
+		return
+	}
+	if event.Buttons() == tcell.ButtonNone {
+		g.hoveredResign = g.resignButtonAt(x, y, layout)
+		g.hoveredFlip = flipButtonAt(x, y, layout)
+		g.hoveredDraw = !g.pendingDraw && !g.incomingDraw() && drawOfferButtonAt(x, y, layout)
+		g.hoveredTakeback = !g.pendingTakeback && !g.incomingTakeback() && takebackButtonAt(x, y, layout)
+		if g.hoveredResign || g.hoveredFlip || g.hoveredDraw || g.hoveredTakeback {
+			return
+		}
+	}
+	if event.Buttons() == tcell.Button1 && g.resignButtonAt(x, y, layout) {
+		if g.resignPending {
+			g.action(service, results, "resign", true)
+		} else {
+			g.resignPending = true
+		}
+		return
+	}
+	if event.Buttons() == tcell.Button1 && g.resignPending {
+		g.resignPending = false
+		g.hoveredResign = false
+		return
+	}
+	if event.Buttons() == tcell.Button1 && flipButtonAt(x, y, layout) {
+		g.flipBoard()
+		return
+	}
+	if event.Buttons() == tcell.Button1 && !g.pendingDraw && !g.incomingDraw() && drawOfferButtonAt(x, y, layout) {
+		g.pendingDraw = true
+		g.offerAnimation = 0
+		g.action(service, results, "draw", true)
+		return
+	}
+	if event.Buttons() == tcell.Button1 && !g.pendingTakeback && !g.incomingTakeback() && takebackButtonAt(x, y, layout) {
+		g.pendingTakeback = true
+		g.offerAnimation = 0
+		g.action(service, results, "takeback", true)
+		return
+	}
+	if g.pendingMove || g.board.ColorToMove != g.me {
+		return
+	}
+	_, onBoard := squareAtScreenPosition(x, y, layout, g.perspective)
+	if !onBoard && len(g.promotionChoices) == 0 {
+		return
+	}
+	moveCount := len(g.moves)
+	g.localGameState.handleMouse(event, width, height)
+	if len(g.moves) == moveCount {
+		return
+	}
+	move := g.moves[len(g.moves)-1].UCI()
+	if err := g.rebuild(g.state); err != nil {
+		g.message = err.Error()
+		return
+	}
+	g.uciInput = move
+	g.submitMove(service, results)
+}
+
+func (g *onlineGameState) handleOfferKey(event *tcell.EventKey, service OnlineBoardService, results chan<- onlineResult, action string) bool {
+	if event.Key() == tcell.KeyEsc {
+		return false
+	}
+	if event.Key() == tcell.KeyRune && (event.Rune() == 'y' || event.Rune() == 'Y') {
+		g.action(service, results, action, true)
+	}
+	if event.Key() == tcell.KeyRune && (event.Rune() == 'n' || event.Rune() == 'N') {
+		g.action(service, results, action, false)
+	}
+	return false
+}
+
+func (g *onlineGameState) submitMove(service OnlineBoardService, results chan<- onlineResult) {
+	if g.pendingMove || g.board.ColorToMove != g.me {
+		return
+	}
+	if _, err := g.board.ParseUCI(g.uciInput); err != nil {
+		g.message = err.Error()
+		return
+	}
+	g.pendingMove = true
+	move := g.uciInput
+	g.uciInput = ""
+	go func() {
+		sendOnlineResult(g.boardContext(), results, onlineResult{action: "move", err: service.MakeMove(g.boardContext(), g.gameID, move)})
+	}()
+}
+
+func (g *onlineGameState) action(service OnlineBoardService, results chan<- onlineResult, action string, accept bool) {
+	g.resignPending = false
+	go func() {
+		var err error
+		switch action {
+		case "resign":
+			err = service.Resign(g.boardContext(), g.gameID)
+		case "draw":
+			err = service.SetDraw(g.boardContext(), g.gameID, accept)
+		case "takeback":
+			err = service.SetTakeback(g.boardContext(), g.gameID, accept)
+		}
+		sendOnlineResult(g.boardContext(), results, onlineResult{action: action, err: err})
+	}()
+}
+
+func (g onlineGameState) boardContext() context.Context {
+	if g.requestContext != nil {
+		return g.requestContext
+	}
+	return context.Background()
+}
+
+func (g onlineGameState) ownDrawOffer() bool {
+	return (g.me == chess.White && g.state.WhiteDraw) || (g.me == chess.Black && g.state.BlackDraw)
+}
+
+func (g onlineGameState) ownTakebackRequest() bool {
+	return (g.me == chess.White && g.state.WhiteTakeback) || (g.me == chess.Black && g.state.BlackTakeback)
+}
+
+func drawOnlineGame(screen tcell.Screen, game onlineGameState) {
+	width, height := screen.Size()
+	layout, ok := localBoardLayout(width, height)
+	if !ok {
+		drawCentered(screen, height/2, "Terminal too small", titleStyle)
+		return
+	}
+	drawBoard(screen, game.localGameState, layout)
+	drawMoveHistory(screen, game.localGameState, layout, width)
+	top := game.black
+	bottom := game.white
+	topColor, bottomColor := chess.Black, chess.White
+	if game.perspective == chess.Black {
+		top, bottom, topColor, bottomColor = bottom, top, chess.White, chess.Black
+	}
+	drawString(screen, layout.x-2, layout.y-3, playerLine(top, topColor), titleStyle)
+	drawString(screen, layout.x-2, layout.y-2, formatClock(game.clockRemaining[topColor])+"  "+materialIndicator(game.board, topColor), mutedStyle)
+	drawString(screen, layout.x-2, layout.y+10, playerLine(bottom, bottomColor), titleStyle)
+	drawString(screen, layout.x-2, layout.y+11, formatClock(game.clockRemaining[bottomColor])+"  "+materialIndicator(game.board, bottomColor), mutedStyle)
+	drawString(screen, layout.x-2, layout.y+13, "Move (UCI): "+game.uciInput+"_", backgroundStyle)
+	message := game.message
+	if game.incomingDraw() {
+		message = "Opponent offers a draw: y accept / n decline"
+	} else if game.incomingTakeback() {
+		message = "Opponent requests takeback: y accept / n decline"
+	} else if game.isFinished() {
+		message = "Game " + game.state.Status
+	}
+	drawString(screen, layout.x-2, layout.y+14, message, mutedStyle)
+	drawOnlineActionButtons(screen, game, layout)
+	drawString(screen, layout.x-2, layout.y+15, "Enter: submit move", mutedStyle)
+}
+
+func playerLine(player lichessapi.Player, color chess.PieceColor) string {
+	marker := "●"
+	if color == chess.Black {
+		marker = "○"
+	}
+	return fmt.Sprintf("%s %s (%d)", marker, player.Name, player.Rating)
+}
+
+func drawOnlineActionButtons(screen tcell.Screen, game onlineGameState, layout boardLayout) {
+	x, y := onlineActionButtonPosition(layout, "draw")
+	drawOnlineActionButton(screen, x, y, game.drawOfferLabel(), game.hoveredDraw, game.pendingDraw)
+	x, y = onlineActionButtonPosition(layout, "takeback")
+	drawOnlineActionButton(screen, x, y, game.takebackLabel(), game.hoveredTakeback, game.pendingTakeback)
+}
+
+func drawOnlineActionButton(screen tcell.Screen, x, y int, label string, hovered, pending bool) {
+	style := backgroundStyle
+	if pending {
+		style = mutedStyle
+	} else if hovered {
+		style = selectedStyle
+	}
+	drawString(screen, x, y, label, style)
+}
+
+func (g onlineGameState) drawOfferLabel() string {
+	if !g.pendingDraw {
+		return "[🤝] Draw offer"
+	}
+	return "[🤝] Offering draw" + strings.Repeat(".", int(g.offerAnimation)+1)
+}
+
+func (g onlineGameState) takebackLabel() string {
+	if !g.pendingTakeback {
+		return "[🔙] Takeback request"
+	}
+	return "[🔙] Requesting takeback" + strings.Repeat(".", int(g.offerAnimation)+1)
+}
+
+func onlineActionButtonPosition(layout boardLayout, action string) (int, int) {
+	y := layout.y + 8
+	if action == "takeback" {
+		y++
+	}
+	return moveHistoryBoxX(layout), y
+}
+
+func drawOfferButtonAt(x, y int, layout boardLayout) bool {
+	buttonX, buttonY := onlineActionButtonPosition(layout, "draw")
+	return y == buttonY && x >= buttonX && x < buttonX+runewidth.StringWidth("[🤝] Draw offer")
+}
+
+func takebackButtonAt(x, y int, layout boardLayout) bool {
+	buttonX, buttonY := onlineActionButtonPosition(layout, "takeback")
+	return y == buttonY && x >= buttonX && x < buttonX+runewidth.StringWidth("[🔙] Takeback request")
+}
+func (g onlineGameState) incomingDraw() bool {
+	return (g.me == chess.White && g.state.BlackDraw) || (g.me == chess.Black && g.state.WhiteDraw)
+}
+func (g onlineGameState) incomingTakeback() bool {
+	return (g.me == chess.White && g.state.BlackTakeback) || (g.me == chess.Black && g.state.WhiteTakeback)
+}

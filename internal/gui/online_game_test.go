@@ -1,0 +1,239 @@
+package gui
+
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ahmadnaufalhakim/gochs/internal/chess"
+	"github.com/ahmadnaufalhakim/gochs/internal/entity"
+	lichessapi "github.com/ahmadnaufalhakim/gochs/internal/lichess"
+	"github.com/gdamore/tcell/v2"
+)
+
+func TestOnlineTimeControlExcludesUnlimitedAndCustom(t *testing.T) {
+	state := menuState{page: timeControlMenu, onlineGame: true, timeControlSelected: onlineTimeControlStart + onlineTimeControlCount - 1}
+	state.moveTimeControlSelection(1)
+	if state.timeControlSelected != onlineTimeControlStart {
+		t.Fatalf("online selection = %d, want wrap to first supported preset", state.timeControlSelected)
+	}
+	state.timeControlSelected = 0
+	if state.activateTimeControl() {
+		t.Fatal("Bullet must not start an online seek")
+	}
+}
+
+func TestOnlineGameRebuildsServerMovesAndPerspective(t *testing.T) {
+	full := lichessapi.GameFullEvent{
+		Game:       lichessapi.Game{ID: "game", White: lichessapi.Player{ID: "opponent", Name: "Opponent", Rating: 1600}, Black: lichessapi.Player{ID: "me", Name: "Me", Rating: 1700}},
+		InitialFEN: "startpos",
+		State:      lichessapi.GameState{Moves: "e2e4 e7e5", WhiteTime: 60000, BlackTime: 59000, Status: "started"},
+	}
+	game, err := newOnlineGame(full, "me", "Me", chess.WOOD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if game.me != chess.Black || game.perspective != chess.Black {
+		t.Errorf("perspective = %v/%v, want black", game.me, game.perspective)
+	}
+	if len(game.moves) != 2 || game.board.ColorToMove != chess.White {
+		t.Errorf("rebuilt game = moves:%d turn:%v", len(game.moves), game.board.ColorToMove)
+	}
+	e4, _ := chess.ParseCoordinate("e4")
+	if piece := game.board.PieceAt(e4); piece.Type != chess.Pawn || piece.Color != chess.White {
+		t.Errorf("e4 piece = %#v, want white pawn", piece)
+	}
+	e5, _ := chess.ParseCoordinate("e5")
+	if piece := game.board.PieceAt(e5); piece.Type != chess.Pawn || piece.Color != chess.Black {
+		t.Errorf("e5 piece = %#v, want black pawn", piece)
+	}
+	if got := playerLine(game.black, chess.Black); got != "○ Me (1700)" {
+		t.Errorf("player line = %q", got)
+	}
+}
+
+func TestOnlineGameAppliesServerMoveAndReconcilesClock(t *testing.T) {
+	full := lichessapi.GameFullEvent{Game: lichessapi.Game{ID: "game", White: lichessapi.Player{ID: "me"}, Black: lichessapi.Player{ID: "opponent"}}, InitialFEN: "startpos", State: lichessapi.GameState{Moves: "e2e4", WhiteTime: 59000, BlackTime: 60000, Status: "started"}}
+	game, err := newOnlineGame(full, "me", "Me", chess.WOOD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	game.apply(onlineResult{event: lichessapi.GameStateEvent{State: lichessapi.GameState{Moves: "e2e4 e7e5", WhiteTime: 59000, BlackTime: 59500, Status: "started"}}})
+	if len(game.moves) != 2 || game.board.ColorToMove != chess.White {
+		t.Fatalf("server move was not applied: moves:%d turn:%s", len(game.moves), game.board.ColorToMove)
+	}
+	game.advanceClock(game.clockUpdated.Add(500 * time.Millisecond))
+	if got := game.clockRemaining[chess.White]; got != 58500*time.Millisecond {
+		t.Errorf("white clock = %s, want 58.5s", got)
+	}
+}
+
+func TestOnlineMoveFailureAllowsRetry(t *testing.T) {
+	game := onlineGameState{pendingMove: true}
+	game.apply(onlineResult{action: "move", err: context.DeadlineExceeded})
+	if game.pendingMove {
+		t.Fatal("failed move must clear pending state")
+	}
+}
+
+func TestOnlineIncomingOfferDisablesOfferButton(t *testing.T) {
+	game := onlineGameState{me: chess.White, state: lichessapi.GameState{Status: "started", BlackDraw: true}}
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("expected board layout")
+	}
+	x, y := onlineActionButtonPosition(layout, "draw")
+	game.handleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone), 80, 24, nil, nil)
+	if game.hoveredDraw {
+		t.Fatal("incoming draw must disable draw-offer button")
+	}
+}
+
+func TestOnlineGameKeepsStreamingWhileCreated(t *testing.T) {
+	game := onlineGameState{state: lichessapi.GameState{Status: "created"}}
+	if !game.isInProgress() || game.isFinished() {
+		t.Fatal("created game must remain active until Lichess reports a terminal status")
+	}
+	game.state.Status = "mate"
+	if game.isInProgress() || !game.isFinished() {
+		t.Fatal("mate game must be terminal")
+	}
+}
+
+func TestOnlineGameUsesMaterialIndicator(t *testing.T) {
+	full := lichessapi.GameFullEvent{Game: lichessapi.Game{ID: "game", White: lichessapi.Player{ID: "me"}, Black: lichessapi.Player{ID: "opponent"}}, InitialFEN: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPP1/RNBQKBNR w KQkq - 0 1", State: lichessapi.GameState{Status: "started"}}
+	game, err := newOnlineGame(full, "me", "Me", chess.WOOD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := materialIndicator(game.board, chess.Black); got != "♙ +1" {
+		t.Errorf("material indicator = %q, want pawn advantage", got)
+	}
+}
+
+func TestOnlineButtonsHoverAndCancelResign(t *testing.T) {
+	game := onlineGameState{localGameState: newLocalGameState(chess.WOOD), state: lichessapi.GameState{Status: "started"}}
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("expected board layout")
+	}
+	resignX, resignY := resignButtonPosition(layout)
+	game.handleMouse(tcell.NewEventMouse(resignX, resignY, tcell.ButtonNone, tcell.ModNone), 80, 24, nil, nil)
+	if !game.hoveredResign {
+		t.Fatal("resign button was not highlighted")
+	}
+	game.handleMouse(tcell.NewEventMouse(resignX, resignY, tcell.Button1, tcell.ModNone), 80, 24, nil, nil)
+	if !game.resignPending {
+		t.Fatal("first resign click did not request confirmation")
+	}
+	game.handleMouse(tcell.NewEventMouse(layout.x, layout.y, tcell.Button1, tcell.ModNone), 80, 24, nil, nil)
+	if game.resignPending {
+		t.Fatal("clicking elsewhere did not cancel resign confirmation")
+	}
+}
+
+func TestOnlineGameHighlightsHoverablePiece(t *testing.T) {
+	game := onlineGameState{
+		localGameState: newLocalGameState(chess.WOOD),
+		me:             chess.White,
+		state:          lichessapi.GameState{Status: "started"},
+	}
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("expected board layout")
+	}
+	game.handleMouse(tcell.NewEventMouse(layout.x+4*squareWidth, layout.y+6, tcell.ButtonNone, tcell.ModNone), 80, 24, nil, nil)
+	e2, _ := chess.ParseCoordinate("e2")
+	if game.hoveredSquare == nil || *game.hoveredSquare != e2 {
+		t.Errorf("hovered square = %v, want e2", game.hoveredSquare)
+	}
+}
+
+func TestOnlineOfferButtonLabelsAnimateAndDisable(t *testing.T) {
+	game := onlineGameState{pendingDraw: true, pendingTakeback: true, state: lichessapi.GameState{Status: "started"}}
+	if got := game.drawOfferLabel(); got != "[🤝] Offering draw." {
+		t.Errorf("draw label = %q", got)
+	}
+	if got := game.takebackLabel(); got != "[🔙] Requesting takeback." {
+		t.Errorf("takeback label = %q", got)
+	}
+	game.offerAnimation = 2
+	if got := game.drawOfferLabel(); got != "[🤝] Offering draw..." {
+		t.Errorf("draw animation label = %q", got)
+	}
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("expected board layout")
+	}
+	x, y := onlineActionButtonPosition(layout, "draw")
+	game.handleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone), 80, 24, nil, nil)
+	if game.hoveredDraw {
+		t.Fatal("pending draw button must not highlight")
+	}
+}
+
+func TestOnlineGameRejectsGameWithoutConnectedAccount(t *testing.T) {
+	_, err := newOnlineGame(lichessapi.GameFullEvent{Game: lichessapi.Game{White: lichessapi.Player{ID: "white"}, Black: lichessapi.Player{ID: "black"}}, InitialFEN: "startpos"}, "me", "Me", chess.WOOD)
+	if err == nil {
+		t.Fatal("expected account mismatch error")
+	}
+}
+
+func TestOnlineGameKeepsManualPerspectiveOnReconnect(t *testing.T) {
+	full := lichessapi.GameFullEvent{Game: lichessapi.Game{ID: "game", White: lichessapi.Player{ID: "me"}, Black: lichessapi.Player{ID: "opponent"}}, InitialFEN: "startpos", State: lichessapi.GameState{Status: "started"}}
+	game, err := newOnlineGame(full, "me", "Me", chess.WOOD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	game.flipBoard()
+	game.apply(onlineResult{event: full, accountID: "me", accountName: "Me"})
+	if game.perspective != chess.Black {
+		t.Errorf("perspective = %s, want Black after reconnect", game.perspective)
+	}
+}
+
+func TestOnlineGameRendersPlayersAndServerClocks(t *testing.T) {
+	game, err := newOnlineGame(lichessapi.GameFullEvent{Game: lichessapi.Game{ID: "game", White: lichessapi.Player{Name: "White", Rating: 1500}, Black: lichessapi.Player{ID: "me", Name: "Black", Rating: 1600}}, InitialFEN: "startpos", State: lichessapi.GameState{WhiteTime: 61000, BlackTime: 59000, Status: "started"}}, "me", "Black", chess.WOOD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 30)
+	drawOnlineGame(screen, *game)
+	screen.Show()
+	cells, width, height := screen.GetContents()
+	text := screenText(cells, width, height)
+	for _, want := range []string{"○ Black (1600)", "● White (1500)", "01:01", "00:59", "[🤝] Draw offer", "[🔙] Takeback request"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("online board missing %q", want)
+		}
+	}
+}
+
+func TestLichessMenuStartsOnlinePlay(t *testing.T) {
+	state := menuState{page: lichessMenu, lichessAccount: &entity.LichessAccount{Username: "me"}, lichessSelected: 3}
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if state.page != timeControlMenu || !state.onlineGame {
+		t.Errorf("online activation = %#v", state)
+	}
+}
+
+func TestLocalGameClearsOnlineTimeControlMode(t *testing.T) {
+	state := menuState{onlineGame: true}
+	state.activatePlayItem(localGame)
+	if state.onlineGame || state.timeControlSelected != 0 {
+		t.Errorf("local game state = %#v", state)
+	}
+}
+
+func TestLichessMenuResumesActiveOnlineGame(t *testing.T) {
+	state := menuState{page: lichessMenu, lichessAccount: &entity.LichessAccount{Username: "me"}, lichessSelected: 3, onlineActive: true}
+	if !state.handleKey(keyEvent(tcell.KeyEnter, 0)) || state.result != OnlineGame {
+		t.Errorf("online resume state = %#v", state)
+	}
+}

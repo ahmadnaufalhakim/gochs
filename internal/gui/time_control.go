@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	lichessapi "github.com/ahmadnaufalhakim/gochs/internal/lichess"
 	"github.com/gdamore/tcell/v2"
 )
 
@@ -48,10 +49,18 @@ const (
 )
 
 func (s *menuState) moveTimeControlSelection(delta int) {
-	s.timeControlSelected = (s.timeControlSelected + delta + len(timeControlChoices)) % len(timeControlChoices)
+	if s.onlineGame {
+		s.timeControlSelected = (s.timeControlSelected-onlineTimeControlStart+delta+onlineTimeControlCount)%onlineTimeControlCount + onlineTimeControlStart
+		return
+	}
+	count := len(timeControlChoices)
+	s.timeControlSelected = (s.timeControlSelected + delta + count) % count
 }
 
 func (s *menuState) activateTimeControl() bool {
+	if s.onlineGame && (s.timeControlSelected < onlineTimeControlStart || s.timeControlSelected >= onlineTimeControlStart+onlineTimeControlCount) {
+		return false
+	}
 	choice := timeControlChoices[s.timeControlSelected]
 	if choice.custom {
 		s.page = customTimeControlMenu
@@ -60,6 +69,11 @@ func (s *menuState) activateTimeControl() bool {
 		return false
 	}
 	s.timeControl = choice.control
+	if s.onlineGame {
+		s.page = onlineColorMenu
+		s.onlineColor = lichessapi.SeekRandom
+		return false
+	}
 	if s.stockfishGame {
 		s.result = StockfishGame
 	} else {
@@ -67,6 +81,11 @@ func (s *menuState) activateTimeControl() bool {
 	}
 	return true
 }
+
+const (
+	onlineTimeControlStart = 6
+	onlineTimeControlCount = 5
+)
 
 func (s *menuState) handleCustomTimeControlKey(event *tcell.EventKey) bool {
 	switch event.Key() {
@@ -128,11 +147,25 @@ func drawTimeControlMenu(screen tcell.Screen, state menuState) {
 	top := (height - 22) / 2
 	y := top + 3
 	title := "Play > Local game"
+	if state.onlineGame {
+		title = "Lichess > Play online"
+	}
 	if state.stockfishGame {
 		title = "Play > Stockfish"
 	}
 	drawCentered(screen, top, title, titleStyle)
-	drawCentered(screen, top+1, "Please select a time control", mutedStyle)
+	message := "Please select a time control"
+	if state.onlineGame {
+		message = "Lichess Board API supports Rapid and Classical"
+	}
+	drawCentered(screen, top+1, message, mutedStyle)
+	if state.onlineGame {
+		choiceIndex := onlineTimeControlStart
+		drawTimeControlSection(screen, x, top+3, "⏱  Rapid", state, &choiceIndex, 3)
+		drawTimeControlSection(screen, x, top+7, "🕰  Classical", state, &choiceIndex, 2)
+		drawCentered(screen, top+10, "Up/Down to select  Enter to choose", mutedStyle)
+		return
+	}
 
 	choiceIndex := 0
 	drawTimeControlSection(screen, x, y, "🚅 Bullet", state, &choiceIndex, 2)
@@ -147,8 +180,10 @@ func drawTimeControlMenu(screen tcell.Screen, state menuState) {
 	if state.timeControlSelected == choiceIndex {
 		style = selectedStyle
 	}
-	drawPaddedString(screen, x, y, 28, "", style)
-	drawString(screen, x, y, "🆓 "+timeControlChoices[choiceIndex].label, style)
+	if !state.onlineGame {
+		drawPaddedString(screen, x, y, 28, "", style)
+		drawString(screen, x, y, "🆓 "+timeControlChoices[choiceIndex].label, style)
+	}
 	drawCentered(screen, top+21, "Up/Down to select  Enter to choose", mutedStyle)
 }
 
@@ -169,12 +204,21 @@ func drawTimeControlChoice(screen tcell.Screen, x, y int, label string, selected
 	drawPaddedString(screen, x, y, 28, label, style)
 }
 
-func timeControlChoiceAt(x, y, width, height int) (int, bool) {
+func timeControlChoiceAt(x, y, width, height int, online bool) (int, bool) {
 	menuX := (width - 28) / 2
 	if x < menuX || x >= menuX+28 {
 		return 0, false
 	}
 	top := (height - 22) / 2
+	if online {
+		if y >= top+4 && y <= top+6 {
+			return onlineTimeControlStart + y - (top + 4), true
+		}
+		if y >= top+8 && y <= top+9 {
+			return onlineTimeControlStart + 3 + y - (top + 8), true
+		}
+		return 0, false
+	}
 	rows := []int{top + 4, top + 5, top + 7, top + 8, top + 9, top + 10, top + 12, top + 13, top + 14, top + 16, top + 17, top + 18, top + 19}
 	for index, row := range rows {
 		if y == row {
