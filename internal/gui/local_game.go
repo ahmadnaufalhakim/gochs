@@ -71,6 +71,7 @@ type localGameState struct {
 	soundStarted        bool
 	soundEnded          bool
 	lowTimePlayed       [chess.PieceColorCount]bool
+	review              gameReview
 }
 
 type boardLayout struct {
@@ -100,6 +101,16 @@ func (g *localGameState) handleKey(event *tcell.EventKey, width, height int) boo
 		return false
 	}
 	if g.hasTerminalResult() {
+		if g.review.active {
+			if event.Key() == tcell.KeyEsc {
+				g.leaveReview()
+			}
+			return false
+		}
+		if event.Key() == tcell.KeyRune && (event.Rune() == 'g' || event.Rune() == 'G') {
+			g.startReview()
+			return false
+		}
 		return event.Key() == tcell.KeyEsc
 	}
 	if g.isComputerTurn() {
@@ -535,6 +546,9 @@ func (g *localGameState) flipBoard() {
 }
 
 func (g localGameState) boardForDisplay() chess.Board {
+	if g.review.variation != nil {
+		return g.review.variation.positions[g.review.variation.viewPly]
+	}
 	if g.hasTerminalResult() && g.viewPly >= 0 && g.viewPly < len(g.positions) {
 		return g.positions[g.viewPly]
 	}
@@ -715,13 +729,22 @@ func pgnDirectory() (string, error) {
 func (g *localGameState) handleReviewMouse(event *tcell.EventMouse, layout boardLayout) {
 	x, y := event.Position()
 	buttons := event.Buttons()
+	if g.review.active {
+		g.handleGameReviewMouse(event, layout, layout.y+12)
+		return
+	}
 	if buttons == tcell.ButtonNone {
 		g.hoveredFlip = flipButtonAt(x, y, layout)
 		g.hoveredSavePGN = savePGNButtonAt(x, y, layout, false)
 		g.hoveredSaveClocks = savePGNButtonAt(x, y, layout, true)
+		g.review.hoveredStart = gameReviewButtonAt(x, y, layout)
 		return
 	}
 	if buttons == tcell.Button1 {
+		if gameReviewButtonAt(x, y, layout) {
+			g.startReview()
+			return
+		}
 		if flipButtonAt(x, y, layout) {
 			g.flipBoard()
 			return
@@ -773,6 +796,10 @@ func (g *localGameState) syncHistoryAfterClick(row int) {
 }
 
 func (g *localGameState) moveReplay(direction int) {
+	if g.review.variation != nil {
+		g.review.variation.viewPly = min(max(0, g.review.variation.viewPly+direction), len(g.review.variation.positions)-1)
+		return
+	}
 	previousPly := g.viewPly
 	viewPly := min(max(0, g.viewPly+direction), len(g.moves))
 	if viewPly == previousPly {
@@ -869,6 +896,9 @@ func drawLocalGame(screen tcell.Screen, game localGameState) {
 }
 
 func gameTitle(game localGameState) string {
+	if game.review.variation != nil {
+		return "Viewing engine variation"
+	}
 	if game.resignedBy != nil {
 		if game.viewPly != len(game.moves) {
 			return game.viewingTitle()
@@ -1084,8 +1114,13 @@ func drawMoveHistoryRow(screen tcell.Screen, x, y, fullmove int, game localGameS
 	if game.hasTerminalResult() && game.viewPly == index+2 {
 		blackStyle = selectedStyle
 	}
-	drawString(screen, x+moveNumberWidth+2, y, fmt.Sprintf("%-*s", sanWidth, game.history[index]), whiteStyle)
+	whiteMove := game.annotatedSAN(index)
+	drawString(screen, x+moveNumberWidth+2, y, fmt.Sprintf("%-*s", sanWidth, whiteMove), whiteStyle)
 	drawString(screen, x+moveNumberWidth+2+sanWidth, y, "  ", backgroundStyle)
+	blackIndex := index + 1
+	if blackMove != "" {
+		blackMove = game.annotatedSAN(blackIndex)
+	}
 	drawString(screen, x+moveNumberWidth+2+sanWidth+2, y, fmt.Sprintf("%-*s", sanWidth, blackMove), blackStyle)
 }
 
@@ -1148,8 +1183,13 @@ func drawGameInput(screen tcell.Screen, game localGameState, layout boardLayout)
 	x := layout.x - 2
 	y := layout.y + 10
 	if game.hasTerminalResult() {
+		if game.review.active {
+			drawGameReviewPanel(screen, game, layout, layout.y+12, true)
+			return
+		}
 		drawSavePGNButton(screen, game, layout, false)
 		drawSavePGNButton(screen, game, layout, true)
+		drawGameReviewButton(screen, game, layout)
 		if game.exportMessage != "" {
 			drawString(screen, x, y+3, game.exportMessage, mutedStyle)
 		}

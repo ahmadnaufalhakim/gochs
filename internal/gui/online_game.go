@@ -547,6 +547,16 @@ func (g *onlineGameState) handleKey(event *tcell.EventKey, service OnlineBoardSe
 		return false
 	}
 	if g.isFinished() || g.fatal {
+		if g.review.active {
+			if event.Key() == tcell.KeyEsc {
+				g.leaveReview()
+			}
+			return false
+		}
+		if event.Key() == tcell.KeyRune && (event.Rune() == 'g' || event.Rune() == 'G') {
+			g.startReview()
+			return false
+		}
 		return event.Key() == tcell.KeyEsc
 	}
 	if g.state.WhiteDraw && g.me == chess.Black || g.state.BlackDraw && g.me == chess.White {
@@ -649,10 +659,15 @@ func (g *onlineGameState) handleMouse(event *tcell.EventMouse, width, height int
 
 func (g *onlineGameState) handleFinishedMouse(event *tcell.EventMouse, layout boardLayout, service OnlineBoardService, results chan<- onlineResult) {
 	x, y := event.Position()
+	if g.review.active {
+		g.handleGameReviewMouse(event, layout, layout.y+13)
+		return
+	}
 	if event.Buttons() == tcell.ButtonNone {
 		g.hoveredFlip = flipButtonAt(x, y, layout)
 		g.hoveredSavePGN = onlineSavePGNButtonAt(x, y, layout, false)
 		g.hoveredSaveClocks = onlineSavePGNButtonAt(x, y, layout, true)
+		g.review.hoveredStart = gameReviewButtonAt(x, y, layout)
 		return
 	}
 	buttons := event.Buttons()
@@ -675,6 +690,10 @@ func (g *onlineGameState) handleFinishedMouse(event *tcell.EventMouse, layout bo
 		return
 	}
 	if buttons != tcell.Button1 {
+		return
+	}
+	if gameReviewButtonAt(x, y, layout) {
+		g.startReview()
 		return
 	}
 	if flipButtonAt(x, y, layout) {
@@ -779,12 +798,17 @@ func drawOnlineGame(screen tcell.Screen, game onlineGameState) {
 	drawString(screen, layout.x-2, layout.y+10, game.playerLine(bottom, bottomColor), titleStyle)
 	drawString(screen, layout.x-2, layout.y+11, formatClock(game.clockRemaining[bottomColor])+"  "+materialIndicator(game.board, bottomColor), mutedStyle)
 	if game.isFinished() {
-		drawOnlineSavePGNButton(screen, display, layout, false)
-		drawOnlineSavePGNButton(screen, display, layout, true)
-		if game.exportMessage != "" {
-			drawString(screen, layout.x-2, layout.y+15, game.exportMessage, mutedStyle)
+		if display.review.active {
+			drawGameReviewPanel(screen, display, layout, layout.y+13, true)
+		} else {
+			drawOnlineSavePGNButton(screen, display, layout, false)
+			drawOnlineSavePGNButton(screen, display, layout, true)
+			drawGameReviewButton(screen, display, layout)
+			if game.exportMessage != "" {
+				drawString(screen, layout.x-2, layout.y+15, game.exportMessage, mutedStyle)
+			}
+			drawString(screen, layout.x-2, layout.y+16, reviewSoundHint(game.message), mutedStyle)
 		}
-		drawString(screen, layout.x-2, layout.y+16, reviewSoundHint(game.message), mutedStyle)
 		return
 	}
 	drawString(screen, layout.x-2, layout.y+13, "Move (UCI): "+game.uciInput+"_", backgroundStyle)

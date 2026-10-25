@@ -1,0 +1,134 @@
+package gui
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/ahmadnaufalhakim/gochs/internal/chess"
+	"github.com/ahmadnaufalhakim/gochs/internal/engine"
+	"github.com/gdamore/tcell/v2"
+)
+
+func TestClassifyMove(t *testing.T) {
+	var board chess.Board
+	board.Reset()
+	move, _ := board.ParseUCI("e2e4")
+	best, _ := board.ParseUCI("d2d4")
+	tests := []struct {
+		loss int
+		want moveClassification
+	}{
+		{0, moveBest},
+		{11, moveExcellent},
+		{31, moveOkay},
+		{81, moveInaccuracy},
+		{181, moveMistake},
+		{351, moveBlunder},
+	}
+	for _, test := range tests {
+		if got := classifyMove(move, best, test.loss); got != test.want {
+			t.Errorf("classifyMove(%d) = %s, want %s", test.loss, got, test.want)
+		}
+	}
+	if got := classifyMove(move, move, 1000); got != moveBest {
+		t.Errorf("best move classification = %s", got)
+	}
+}
+
+func TestBuildMoveReviewsNormalizesBlackToMoveScores(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.uciInput = "e2e4"
+	game.submitUCI()
+	reviews, err := buildMoveReviews(game.positions, game.moves, []engine.Analysis{
+		{Score: engine.Score{}, BestMove: "d2d4", PV: []string{"d2d4"}},
+		{Score: engine.Score{Centipawns: 100}, BestMove: "e7e5", PV: []string{"e7e5"}},
+	})
+	if err != nil {
+		t.Fatalf("buildMoveReviews: %v", err)
+	}
+	if got := reviews[0].classification; got != moveInaccuracy {
+		t.Errorf("classification = %s, want %s", got, moveInaccuracy)
+	}
+	if got := reviews[0].after.centipawns; got != -100 {
+		t.Errorf("post-move white evaluation = %d, want -100", got)
+	}
+}
+
+func TestGameReviewVariationDoesNotChangeGamePositions(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.uciInput = "e2e4"
+	game.submitUCI()
+	best, err := game.positions[0].ParseUCI("d2d4")
+	if err != nil {
+		t.Fatalf("parse best move: %v", err)
+	}
+	game.terminalTitle = "Draw · ½-½"
+	game.viewPly = 1
+	game.review = gameReview{active: true, moves: []moveReview{{classification: moveExcellent, bestMove: best, bestLine: []chess.Move{best}}}}
+	realPosition := game.positions[1]
+	game.startVariation()
+	if game.review.variation == nil || len(game.review.variation.positions) != 2 {
+		t.Fatal("variation was not created")
+	}
+	game.moveReplay(1)
+	if game.boardForDisplay() != game.review.variation.positions[1] {
+		t.Fatal("variation position was not displayed")
+	}
+	if game.positions[1] != realPosition {
+		t.Fatal("variation changed the real game position")
+	}
+}
+
+func TestFinishedGameReviewButtonStartsReview(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.terminalTitle = "Draw · ½-½"
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("expected board layout")
+	}
+	x, y := gameReviewButtonPosition(layout)
+	game.handleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone), 80, 24)
+	if !game.review.active || !game.review.requested || !game.review.analyzing {
+		t.Fatalf("review state = %#v", game.review)
+	}
+}
+
+func TestGameReviewPanelShowsVerdictBestMoveAndEvaluation(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.uciInput = "e2e4"
+	game.submitUCI()
+	best, err := game.positions[0].ParseUCI("d2d4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	game.terminalTitle = "Draw · ½-½"
+	game.viewPly = 1
+	game.review = gameReview{active: true, moves: []moveReview{{
+		classification: moveInaccuracy,
+		before:         positionEvaluation{},
+		after:          positionEvaluation{centipawns: -90},
+		bestMove:       best,
+		bestSAN:        "d4",
+		bestLine:       []chess.Move{best},
+	}}}
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 24)
+	drawLocalGame(screen, game)
+	screen.Show()
+	contents, width, height := screen.GetContents()
+	text := screenText(contents, width, height)
+	for _, want := range []string{"e4 is inaccuracy.", "The best move was [d4]", "Eval: +0.00 -> -0.90"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("review panel does not show %q", want)
+		}
+	}
+
+	game.handleKey(keyEvent(tcell.KeyEsc, 0), 80, 24)
+	if game.review.active {
+		t.Fatal("Esc did not return from Game Review to exports")
+	}
+}

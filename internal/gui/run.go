@@ -104,11 +104,16 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 	defer clockTicker.Stop()
 	lichessResults := make(chan lichessResult, 1)
 	onlineResults := make(chan onlineResult, 8)
+	reviewResults := make(chan reviewResult, 1)
 	var onlineCancel context.CancelFunc
 	var onlineContext context.Context
+	var reviewCancel context.CancelFunc
 	defer func() {
 		if onlineCancel != nil {
 			onlineCancel()
+		}
+		if reviewCancel != nil {
+			reviewCancel()
 		}
 	}()
 
@@ -170,6 +175,12 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 					onlineCancel()
 				}
 			}
+		case result := <-reviewResults:
+			if game != nil && result.target == game {
+				game.applyReviewResult(result)
+			} else if online != nil && result.target == &online.localGameState {
+				online.applyReviewResult(result)
+			}
 		case now := <-clockTicker.C:
 			if game != nil {
 				game.advanceClock(now)
@@ -191,6 +202,10 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 			case *tcell.EventKey:
 				if online != nil && onlineVisible {
 					if online.handleKey(event, onlineService, onlineResults) {
+						if reviewCancel != nil {
+							reviewCancel()
+							reviewCancel = nil
+						}
 						if online.state.Status == "started" {
 							onlineVisible = false
 						} else {
@@ -200,14 +215,43 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 						}
 						state.showMainMenu()
 					}
+					if online != nil && !online.review.active && reviewCancel != nil {
+						reviewCancel()
+						reviewCancel = nil
+					}
+					if online != nil && online.review.requested {
+						if reviewCancel != nil {
+							reviewCancel()
+						}
+						online.review.requested = false
+						reviewCancel = beginGameReview(&online.localGameState, state.stockfishPath, reviewResults)
+					}
 					continue
 				}
 				if game != nil {
 					width, height := screen.Size()
 					if game.handleKey(event, width, height) {
+						if reviewCancel != nil {
+							reviewCancel()
+							reviewCancel = nil
+						}
 						game.closeStockfish()
 						game = nil
 						state.showMainMenu()
+					}
+					if game == nil {
+						continue
+					}
+					if !game.review.active && reviewCancel != nil {
+						reviewCancel()
+						reviewCancel = nil
+					}
+					if game.review.requested {
+						if reviewCancel != nil {
+							reviewCancel()
+						}
+						game.review.requested = false
+						reviewCancel = beginGameReview(game, state.stockfishPath, reviewResults)
 					}
 					continue
 				}
@@ -277,10 +321,32 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 				width, height := screen.Size()
 				if game != nil {
 					game.handleMouse(event, width, height)
+					if !game.review.active && reviewCancel != nil {
+						reviewCancel()
+						reviewCancel = nil
+					}
+					if game.review.requested {
+						if reviewCancel != nil {
+							reviewCancel()
+						}
+						game.review.requested = false
+						reviewCancel = beginGameReview(game, state.stockfishPath, reviewResults)
+					}
 					continue
 				}
 				if online != nil && onlineVisible {
 					online.handleMouse(event, width, height, onlineService, onlineResults)
+					if !online.review.active && reviewCancel != nil {
+						reviewCancel()
+						reviewCancel = nil
+					}
+					if online.review.requested {
+						if reviewCancel != nil {
+							reviewCancel()
+						}
+						online.review.requested = false
+						reviewCancel = beginGameReview(&online.localGameState, state.stockfishPath, reviewResults)
+					}
 					continue
 				}
 				if puzzle != nil {

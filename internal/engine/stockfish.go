@@ -24,6 +24,22 @@ type Search struct {
 	MaxMoveTime    time.Duration
 }
 
+// Score is Stockfish's evaluation of a position. Mate is expressed in moves
+// when IsMate is true; otherwise Centipawns is used.
+type Score struct {
+	Centipawns int
+	Mate       int
+	IsMate     bool
+}
+
+// Analysis is a single principal variation reported by Stockfish.
+type Analysis struct {
+	Depth    int
+	Score    Score
+	PV       []string
+	BestMove string
+}
+
 type Config struct {
 	Path       string
 	Difficulty int
@@ -205,7 +221,9 @@ func (c *Client) BestMove(ctx context.Context, moves []string, search Search) (s
 	for {
 		select {
 		case <-ctx.Done():
-			_ = c.command("stop")
+			if err := c.stopAndDrain(); err != nil {
+				return "", err
+			}
 			return "", ctx.Err()
 		case line, ok := <-c.lines:
 			if !ok {
@@ -219,6 +237,154 @@ func (c *Client) BestMove(ctx context.Context, moves []string, search Search) (s
 			}
 		}
 	}
+}
+
+// Analyze searches fen to depth and returns Stockfish's final single-PV
+// evaluation. The client remains usable when ctx is cancelled.
+func (c *Client) Analyze(ctx context.Context, fen string, depth int) (Analysis, error) {
+	return c.AnalyzeWithUpdates(ctx, fen, depth, nil)
+}
+
+// AnalyzeWithUpdates searches fen to depth and sends each parsed single-PV
+// update to updates when it is ready to receive. Updates are non-blocking and
+// may be dropped; the returned Analysis is always the latest result.
+func (c *Client) AnalyzeWithUpdates(ctx context.Context, fen string, depth int, updates chan<- Analysis) (Analysis, error) {
+	if err := validAnalysisRequest(fen, depth); err != nil {
+		return Analysis{}, err
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if err := c.command("position fen " + fen); err != nil {
+		return Analysis{}, err
+	}
+	if err := c.command("go depth " + strconv.Itoa(depth)); err != nil {
+		return Analysis{}, err
+	}
+
+	var latest Analysis
+	for {
+		select {
+		case <-ctx.Done():
+			if err := c.stopAndDrain(); err != nil {
+				return latest, err
+			}
+			return latest, ctx.Err()
+		case line, ok := <-c.lines:
+			if !ok {
+				return latest, errors.New("Stockfish exited before completing analysis")
+			}
+			if analysis, ok := parseAnalysis(line); ok {
+				latest = analysis
+				publishAnalysis(updates, analysis)
+				continue
+			}
+			if move, ok := bestMove(line); ok {
+				if move == "(none)" {
+					if latest.Depth != 0 {
+						return latest, nil
+					}
+					return latest, errors.New("Stockfish found no move")
+				}
+				latest.BestMove = move
+				publishAnalysis(updates, latest)
+				return latest, nil
+			}
+		}
+	}
+}
+
+func validAnalysisRequest(fen string, depth int) error {
+	if strings.TrimSpace(fen) == "" || strings.ContainsAny(fen, "\r\n") {
+		return errors.New("FEN must be a non-empty single line")
+	}
+	if depth < 1 {
+		return errors.New("analysis depth must be positive")
+	}
+	return nil
+}
+
+func parseAnalysis(line string) (Analysis, bool) {
+	fields := strings.Fields(line)
+	if len(fields) == 0 || fields[0] != "info" {
+		return Analysis{}, false
+	}
+
+	var analysis Analysis
+	hasScore := false
+	for i := 1; i < len(fields); i++ {
+		switch fields[i] {
+		case "depth":
+			if i+1 < len(fields) {
+				analysis.Depth, _ = strconv.Atoi(fields[i+1])
+				i++
+			}
+		case "multipv":
+			if i+1 >= len(fields) || fields[i+1] != "1" {
+				return Analysis{}, false
+			}
+			i++
+		case "score":
+			if i+2 >= len(fields) {
+				return Analysis{}, false
+			}
+			value, err := strconv.Atoi(fields[i+2])
+			if err != nil {
+				return Analysis{}, false
+			}
+			switch fields[i+1] {
+			case "cp":
+				analysis.Score.Centipawns = value
+			case "mate":
+				analysis.Score.Mate = value
+				analysis.Score.IsMate = true
+			default:
+				return Analysis{}, false
+			}
+			hasScore = true
+			i += 2
+		case "pv":
+			analysis.PV = append([]string(nil), fields[i+1:]...)
+			i = len(fields)
+		}
+	}
+	if analysis.Depth == 0 || !hasScore || len(analysis.PV) == 0 {
+		return Analysis{}, false
+	}
+	return analysis, true
+}
+
+func publishAnalysis(updates chan<- Analysis, analysis Analysis) {
+	if updates == nil {
+		return
+	}
+	select {
+	case updates <- analysis:
+	default:
+	}
+}
+
+func bestMove(line string) (string, bool) {
+	fields := strings.Fields(line)
+	if len(fields) < 2 || fields[0] != "bestmove" {
+		return "", false
+	}
+	return fields[1], true
+}
+
+// stopAndDrain waits for the command's required bestmove response so a later
+// request cannot consume output from the cancelled search.
+func (c *Client) stopAndDrain() error {
+	if err := c.command("stop"); err != nil {
+		return err
+	}
+	for line := range c.lines {
+		if _, ok := bestMove(line); ok {
+			return nil
+		}
+	}
+	return errors.New("Stockfish exited while stopping search")
 }
 
 func (c *Client) ready(ctx context.Context) error {
