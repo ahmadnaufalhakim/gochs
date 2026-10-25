@@ -31,9 +31,9 @@ func (c moveClassification) String() string {
 func (c moveClassification) marker() string {
 	switch c {
 	case moveBest:
-		return "!"
+		return ""
 	case moveExcellent:
-		return "!"
+		return ""
 	case moveInaccuracy:
 		return "?!"
 	case moveMistake:
