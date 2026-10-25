@@ -785,6 +785,7 @@ func drawOnlineGame(screen tcell.Screen, game onlineGameState) {
 	if game.isFinished() {
 		display.terminalTitle = game.onlineTerminalTitle()
 	}
+	displayBoard := display.boardForDisplay()
 	drawBoard(screen, display, layout)
 	drawMoveHistory(screen, display, layout, width)
 	top := game.black
@@ -794,9 +795,9 @@ func drawOnlineGame(screen tcell.Screen, game onlineGameState) {
 		top, bottom, topColor, bottomColor = bottom, top, chess.White, chess.Black
 	}
 	drawString(screen, layout.x-2, layout.y-3, game.playerLine(top, topColor), titleStyle)
-	drawString(screen, layout.x-2, layout.y-2, formatClock(game.clockRemaining[topColor])+"  "+materialIndicator(game.board, topColor), mutedStyle)
+	drawString(screen, layout.x-2, layout.y-2, formatClock(game.clockRemaining[topColor])+"  "+materialIndicator(displayBoard, topColor), mutedStyle)
 	drawString(screen, layout.x-2, layout.y+10, game.playerLine(bottom, bottomColor), titleStyle)
-	drawString(screen, layout.x-2, layout.y+11, formatClock(game.clockRemaining[bottomColor])+"  "+materialIndicator(game.board, bottomColor), mutedStyle)
+	drawString(screen, layout.x-2, layout.y+11, formatClock(game.clockRemaining[bottomColor])+"  "+materialIndicator(displayBoard, bottomColor), mutedStyle)
 	if game.isFinished() {
 		if display.review.active {
 			drawGameReviewPanel(screen, display, layout, layout.y+13, true)

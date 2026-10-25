@@ -267,6 +267,37 @@ func TestFinishedOnlineGameScrollsBoardHistory(t *testing.T) {
 	}
 }
 
+func TestFinishedOnlineGameMaterialUsesScrolledPosition(t *testing.T) {
+	full := lichessapi.GameFullEvent{Game: lichessapi.Game{ID: "game", White: lichessapi.Player{ID: "me"}, Black: lichessapi.Player{ID: "opponent"}}, InitialFEN: "startpos", State: lichessapi.GameState{Moves: "e2e4 d7d5 e4d5", Status: "mate", Winner: "white"}}
+	game, err := newOnlineGame(full, "me", "Me", chess.WOOD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 24)
+
+	game.moveReplay(-1)
+	drawOnlineGame(screen, *game)
+	screen.Show()
+	contents, width, height := screen.GetContents()
+	if strings.Contains(screenText(contents, width, height), "♙ +1") {
+		t.Fatal("scrolled position rendered final material advantage")
+	}
+
+	game.moveReplay(1)
+	screen.Clear()
+	drawOnlineGame(screen, *game)
+	screen.Show()
+	contents, width, height = screen.GetContents()
+	if !strings.Contains(screenText(contents, width, height), "♙ +1") {
+		t.Fatal("final position did not render material advantage")
+	}
+}
+
 func TestOnlineOfferButtonLabelsAnimateAndDisable(t *testing.T) {
 	game := onlineGameState{pendingDraw: true, pendingTakeback: true, state: lichessapi.GameState{Status: "started"}}
 	if got := game.drawOfferLabel(); got != "[🤝] Offering draw." {
