@@ -853,7 +853,11 @@ func drawLichessMenu(screen tcell.Screen, state menuState) {
 	if account.FromEnvironment {
 		drawCentered(screen, height/2+7, "Using GOCHS_LICHESS_TOKEN", mutedStyle)
 	} else if state.lichessMessage != "" {
-		drawCentered(screen, height/2+7, state.lichessMessage, mutedStyle)
+		messageY := height/2 + 7
+		if strings.HasPrefix(state.lichessMessage, "Offline puzzle rating synced to ") {
+			messageY += 2
+		}
+		drawCentered(screen, messageY, state.lichessMessage, mutedStyle)
 	}
 }
 
