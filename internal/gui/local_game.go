@@ -26,49 +26,51 @@ const (
 )
 
 type localGameState struct {
-	board             chess.Board
-	theme             chess.ColorTheme
-	perspective       chess.PieceColor
-	autoFlip          bool
-	selectedSource    *chess.Square
-	hoveredSquare     *chess.Square
-	promotionChoices  []chess.Move
-	hoveredPromotion  rune
-	uciInput          string
-	message           string
-	history           []string
-	clockHistory      []time.Duration
-	moves             []chess.Move
-	positions         []chess.Board
-	viewPly           int
-	historyScroll     int
-	lastMove          chess.Move
-	hasLastMove       bool
-	positionCounts    map[uint64]uint
-	drawReason        string
-	terminalTitle     string
-	timedOutBy        *chess.PieceColor
-	timeControl       timeControl
-	clockRemaining    [chess.PieceColorCount]time.Duration
-	turnStarted       time.Time
-	startedAt         time.Time
-	resignPending     bool
-	hoveredResign     bool
-	hoveredFlip       bool
-	hoveredSavePGN    bool
-	hoveredSaveClocks bool
-	exportMessage     string
-	resignedBy        *chess.PieceColor
-	computerColor     *chess.PieceColor
-	stockfish         *engine.Client
-	engineResults     chan engineResult
-	engineDifficulty  int
-	engineThinking    bool
-	engineRandom      func(int) int
-	sounds            sound.Player
-	soundStarted      bool
-	soundEnded        bool
-	lowTimePlayed     [chess.PieceColorCount]bool
+	board               chess.Board
+	theme               chess.ColorTheme
+	perspective         chess.PieceColor
+	autoFlip            bool
+	selectedSource      *chess.Square
+	hoveredSquare       *chess.Square
+	promotionChoices    []chess.Move
+	hoveredPromotion    rune
+	uciInput            string
+	message             string
+	history             []string
+	clockHistory        []time.Duration
+	moves               []chess.Move
+	positions           []chess.Board
+	viewPly             int
+	historyScroll       int
+	lastMove            chess.Move
+	hasLastMove         bool
+	positionCounts      map[uint64]uint
+	drawReason          string
+	terminalTitle       string
+	timedOutBy          *chess.PieceColor
+	timeControl         timeControl
+	clockRemaining      [chess.PieceColorCount]time.Duration
+	turnStarted         time.Time
+	startedAt           time.Time
+	resignPending       bool
+	hoveredResign       bool
+	hoveredFlip         bool
+	hoveredSavePGN      bool
+	hoveredSaveClocks   bool
+	exportMessage       string
+	resignedBy          *chess.PieceColor
+	computerColor       *chess.PieceColor
+	stockfish           *engine.Client
+	engineResults       chan engineResult
+	engineDifficulty    int
+	engineThinking      bool
+	engineRandom        func(int) int
+	sounds              sound.Player
+	suppressSoundEvents bool
+	adjustSoundVolume   func(int) int
+	soundStarted        bool
+	soundEnded          bool
+	lowTimePlayed       [chess.PieceColorCount]bool
 }
 
 type boardLayout struct {
@@ -93,6 +95,9 @@ func newLocalGameState(theme chess.ColorTheme) localGameState {
 func (g *localGameState) handleKey(event *tcell.EventKey, width, height int) bool {
 	if _, ok := localBoardLayout(width, height); !ok {
 		return event.Key() == tcell.KeyEsc
+	}
+	if g.handleSoundVolumeKey(event) {
+		return false
 	}
 	if g.hasTerminalResult() {
 		return event.Key() == tcell.KeyEsc
@@ -145,6 +150,23 @@ func (g *localGameState) handleKey(event *tcell.EventKey, width, height int) boo
 	}
 
 	return false
+}
+
+func (g *localGameState) handleSoundVolumeKey(event *tcell.EventKey) bool {
+	if event.Key() != tcell.KeyRune || g.adjustSoundVolume == nil {
+		return false
+	}
+	var delta int
+	switch event.Rune() {
+	case ',':
+		delta = -10
+	case '.':
+		delta = 10
+	default:
+		return false
+	}
+	g.message = fmt.Sprintf("Sound volume: %d%%", g.adjustSoundVolume(delta))
+	return true
 }
 
 func (g *localGameState) handleMouse(event *tcell.EventMouse, width, height int) {
@@ -442,6 +464,9 @@ func (g *localGameState) makeMove(move chess.Move) {
 }
 
 func (g *localGameState) startSounds() {
+	if g.suppressSoundEvents {
+		return
+	}
 	if g.soundStarted {
 		return
 	}
@@ -450,6 +475,9 @@ func (g *localGameState) startSounds() {
 }
 
 func (g *localGameState) endSounds() {
+	if g.suppressSoundEvents {
+		return
+	}
 	if g.soundEnded {
 		return
 	}
@@ -486,7 +514,7 @@ func (g *localGameState) playReplayMove(move chess.Move) {
 }
 
 func (g *localGameState) play(event sound.Event) {
-	if g.sounds != nil {
+	if !g.suppressSoundEvents && g.sounds != nil {
 		g.sounds.Play(event)
 	}
 }
@@ -1125,17 +1153,25 @@ func drawGameInput(screen tcell.Screen, game localGameState, layout boardLayout)
 		if game.exportMessage != "" {
 			drawString(screen, x, y+3, game.exportMessage, mutedStyle)
 		}
-		drawString(screen, x, y+4, "Esc: return to menu", mutedStyle)
+		drawString(screen, x, y+6, reviewSoundHint(game.message), mutedStyle)
 		return
 	}
 	drawUCIInputBorder(screen, x, y)
 	drawPaddedString(screen, x+1, y+1, uciInputBoxWidth-2, game.uciInput+"_", backgroundStyle)
-	if game.stockfishStatus() != "" {
-		drawString(screen, x, y+4, game.stockfishStatus(), mutedStyle)
-	} else if game.message != "" {
+	if game.message != "" {
 		drawString(screen, x, y+4, game.message, mutedStyle)
+	} else if game.stockfishStatus() != "" {
+		drawString(screen, x, y+4, game.stockfishStatus(), mutedStyle)
 	}
-	drawString(screen, x, y+5, "Esc: clear selection or return to menu", mutedStyle)
+	drawString(screen, x, y+5, ",/.: sound volume  Esc: clear selection or return to menu", mutedStyle)
+}
+
+func reviewSoundHint(message string) string {
+	hint := ",/.: Sound volume  Esc: return to menu"
+	if message == "" {
+		return hint
+	}
+	return message + "  " + hint
 }
 
 func drawSavePGNButton(screen tcell.Screen, game localGameState, layout boardLayout, includeClocks bool) {
@@ -1251,7 +1287,7 @@ func promotionPieceType(character rune) chess.PieceType {
 }
 
 func localBoardLayout(width, height int) (boardLayout, bool) {
-	if width < 52 || height < 20 {
+	if width < 52 || height < 21 {
 		return boardLayout{}, false
 	}
 

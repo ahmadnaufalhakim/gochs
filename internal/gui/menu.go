@@ -9,6 +9,7 @@ import (
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	"github.com/ahmadnaufalhakim/gochs/internal/entity"
 	lichessapi "github.com/ahmadnaufalhakim/gochs/internal/lichess"
+	"github.com/ahmadnaufalhakim/gochs/internal/sound"
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
 )
@@ -76,6 +77,7 @@ type optionsMenuItem uint8
 const (
 	theme optionsMenuItem = iota
 	autoFlip
+	soundVolume
 	optionsBack
 	optionsMenuItemCount
 )
@@ -91,6 +93,9 @@ type menuState struct {
 	result               Result
 	theme                chess.ColorTheme
 	autoFlip             bool
+	soundVolume          int
+	adjustSoundVolume    func(int) int
+	toggleSoundMute      func() int
 	timeControlSelected  int
 	timeControl          timeControl
 	customMinutes        string
@@ -346,11 +351,21 @@ func (s *menuState) handleKey(event *tcell.EventKey) bool {
 			s.moveOptionsSelection(-1)
 		case tcell.KeyDown:
 			s.moveOptionsSelection(1)
+		case tcell.KeyLeft:
+			if s.optionsSelected == soundVolume {
+				s.changeSoundVolume(-10)
+			}
+		case tcell.KeyRight:
+			if s.optionsSelected == soundVolume {
+				s.changeSoundVolume(10)
+			}
 		case tcell.KeyEnter:
 			if s.optionsSelected == theme {
 				s.page = themeMenu
 			} else if s.optionsSelected == autoFlip {
 				s.autoFlip = !s.autoFlip
+			} else if s.optionsSelected == soundVolume {
+				s.toggleVolumeMute()
 			} else {
 				s.showMainMenu()
 			}
@@ -482,7 +497,7 @@ func (s *menuState) handleMouse(event *tcell.EventMouse, width, height int) bool
 			}
 		}
 	case optionsMenu:
-		item, ok := optionsMenuItemAt(x, y, width, height, s.autoFlip)
+		item, ok := optionsMenuItemAt(x, y, width, height, s.autoFlip, s.soundVolume)
 		if ok {
 			s.optionsSelected = item
 			if event.Buttons() == tcell.Button1 {
@@ -490,6 +505,8 @@ func (s *menuState) handleMouse(event *tcell.EventMouse, width, height int) bool
 					s.page = themeMenu
 				} else if item == autoFlip {
 					s.autoFlip = !s.autoFlip
+				} else if item == soundVolume {
+					s.toggleVolumeMute()
 				} else {
 					s.showMainMenu()
 				}
@@ -543,6 +560,26 @@ func (s *menuState) movePlaySelection(delta int) {
 
 func (s *menuState) moveOptionsSelection(delta int) {
 	s.optionsSelected = optionsMenuItem((int(s.optionsSelected) + delta + int(optionsMenuItemCount)) % int(optionsMenuItemCount))
+}
+
+func (s *menuState) changeSoundVolume(delta int) {
+	if s.adjustSoundVolume != nil {
+		s.soundVolume = s.adjustSoundVolume(delta)
+		return
+	}
+	s.soundVolume = min(sound.MaxVolume, max(0, s.soundVolume+delta))
+}
+
+func (s *menuState) toggleVolumeMute() {
+	if s.toggleSoundMute != nil {
+		s.soundVolume = s.toggleSoundMute()
+		return
+	}
+	if s.soundVolume == 0 {
+		s.soundVolume = sound.DefaultVolume
+	} else {
+		s.soundVolume = 0
+	}
 }
 
 func (s *menuState) moveTheme(delta int) {
@@ -628,7 +665,7 @@ func draw(screen tcell.Screen, state menuState) {
 	case playMenu:
 		drawPlayMenu(screen, state)
 	case optionsMenu:
-		drawOptionsMenu(screen, state.optionsSelected, state.autoFlip)
+		drawOptionsMenu(screen, state.optionsSelected, state.autoFlip, state.soundVolume)
 	case themeMenu:
 		drawThemeMenu(screen, state.theme)
 	case timeControlMenu:
@@ -946,9 +983,9 @@ func dateLabel(date time.Time) string {
 	return date.Local().Format("2006-01-02")
 }
 
-func drawOptionsMenu(screen tcell.Screen, selected optionsMenuItem, autoFlipEnabled bool) {
+func drawOptionsMenu(screen tcell.Screen, selected optionsMenuItem, autoFlipEnabled bool, volume int) {
 	width, height := screen.Size()
-	labels := optionsLabels(autoFlipEnabled)
+	labels := optionsLabels(autoFlipEnabled, volume)
 	layout := simpleMenuLayout(width, height, labels)
 
 	drawCentered(screen, layout.y-3, "Options", titleStyle)
@@ -959,15 +996,20 @@ func drawOptionsMenu(screen tcell.Screen, selected optionsMenuItem, autoFlipEnab
 		}
 		drawPaddedString(screen, layout.x, layout.y+item, layout.width, label, style)
 	}
-	drawCentered(screen, layout.y+int(optionsMenuItemCount)+1, "Up/Down to select  Enter to choose", mutedStyle)
+	drawCentered(screen, layout.y+int(optionsMenuItemCount)+1, "Up/Down: select  Left/Right: volume  Enter: choose", mutedStyle)
 }
 
-func optionsLabels(autoFlipEnabled bool) []string {
+func optionsLabels(autoFlipEnabled bool, volume int) []string {
 	autoFlipLabel := "Auto-flip: Off"
 	if autoFlipEnabled {
 		autoFlipLabel = "Auto-flip: On"
 	}
-	return []string{"Theme", autoFlipLabel, "Back"}
+	return []string{"Theme", autoFlipLabel, soundVolumeLabel(volume), "Back"}
+}
+
+func soundVolumeLabel(volume int) string {
+	volume = min(sound.MaxVolume, max(0, volume))
+	return fmt.Sprintf("Sound volume: [%s%s] %d%%", strings.Repeat("█", volume/10), strings.Repeat("░", 10-volume/10), volume)
 }
 
 func drawThemeMenu(screen tcell.Screen, current chess.ColorTheme) {
@@ -1172,8 +1214,12 @@ func stockfishColorAt(x, y, width, height int) (stockfishColor, bool) {
 	return 0, false
 }
 
-func optionsMenuItemAt(x, y, width, height int, autoFlipEnabled bool) (optionsMenuItem, bool) {
-	layout := simpleMenuLayout(width, height, optionsLabels(autoFlipEnabled))
+func optionsMenuItemAt(x, y, width, height int, autoFlipEnabled bool, volume ...int) (optionsMenuItem, bool) {
+	currentVolume := sound.DefaultVolume
+	if len(volume) > 0 {
+		currentVolume = volume[0]
+	}
+	layout := simpleMenuLayout(width, height, optionsLabels(autoFlipEnabled, currentVolume))
 	if x < layout.x || x >= layout.x+layout.width {
 		return 0, false
 	}

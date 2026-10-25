@@ -436,6 +436,7 @@ func (g *onlineGameState) apply(result onlineResult) {
 			next.perspective = g.perspective
 			next.seek = g.seek
 			next.sounds = g.sounds
+			next.adjustSoundVolume = g.adjustSoundVolume
 			next.soundStarted = g.soundStarted
 			next.soundEnded = g.soundEnded
 			next.lowTimePlayed = g.lowTimePlayed
@@ -542,6 +543,9 @@ func (g onlineGameState) pgnTermination() string {
 }
 
 func (g *onlineGameState) handleKey(event *tcell.EventKey, service OnlineBoardService, results chan<- onlineResult) bool {
+	if g.handleSoundVolumeKey(event) {
+		return false
+	}
 	if g.isFinished() || g.fatal {
 		return event.Key() == tcell.KeyEsc
 	}
@@ -628,7 +632,9 @@ func (g *onlineGameState) handleMouse(event *tcell.EventMouse, width, height int
 		return
 	}
 	moveCount := len(g.moves)
+	g.suppressSoundEvents = true
 	g.localGameState.handleMouse(event, width, height)
+	g.suppressSoundEvents = false
 	if len(g.moves) == moveCount {
 		return
 	}
@@ -778,6 +784,7 @@ func drawOnlineGame(screen tcell.Screen, game onlineGameState) {
 		if game.exportMessage != "" {
 			drawString(screen, layout.x-2, layout.y+15, game.exportMessage, mutedStyle)
 		}
+		drawString(screen, layout.x-2, layout.y+16, reviewSoundHint(game.message), mutedStyle)
 		return
 	}
 	drawString(screen, layout.x-2, layout.y+13, "Move (UCI): "+game.uciInput+"_", backgroundStyle)
@@ -791,7 +798,7 @@ func drawOnlineGame(screen tcell.Screen, game onlineGameState) {
 	}
 	drawString(screen, layout.x-2, layout.y+14, message, mutedStyle)
 	drawOnlineActionButtons(screen, game, layout)
-	drawString(screen, layout.x-2, layout.y+15, "Enter: submit move", mutedStyle)
+	drawString(screen, layout.x-2, layout.y+15, "Enter: submit move  ,/.: sound volume", mutedStyle)
 	if len(display.promotionChoices) != 0 {
 		drawPromotionPicker(screen, display, layout)
 	}

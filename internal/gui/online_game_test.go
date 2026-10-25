@@ -219,7 +219,7 @@ func TestFinishedOnlineGameReviewControls(t *testing.T) {
 }
 
 func TestOnlinePGNButtonsDoNotOverlapPlayerRows(t *testing.T) {
-	layout, ok := localBoardLayout(80, 20)
+	layout, ok := localBoardLayout(80, 21)
 	if !ok {
 		t.Fatal("expected board layout")
 	}
@@ -228,7 +228,7 @@ func TestOnlinePGNButtonsDoNotOverlapPlayerRows(t *testing.T) {
 	if plainY <= layout.y+11 || clocksY <= layout.y+11 {
 		t.Fatalf("PGN buttons overlap online player rows: %d, %d", plainY, clocksY)
 	}
-	if clocksY >= 20 {
+	if clocksY >= 21 {
 		t.Fatalf("PGN clocks button is outside the minimum terminal: %d", clocksY)
 	}
 }

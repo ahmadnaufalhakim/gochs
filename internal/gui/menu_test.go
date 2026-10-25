@@ -406,3 +406,46 @@ func TestOptionsMenuTogglesAutoFlip(t *testing.T) {
 		t.Error("second auto-flip activation did not disable it")
 	}
 }
+
+func TestOptionsMenuSoundVolumeControls(t *testing.T) {
+	state := newMenuState()
+	state.page = optionsMenu
+	state.optionsSelected = soundVolume
+	var changes []int
+	state.adjustSoundVolume = func(delta int) int {
+		changes = append(changes, delta)
+		return state.soundVolume + delta
+	}
+	state.toggleSoundMute = func() int { return 0 }
+
+	state.handleKey(keyEvent(tcell.KeyLeft, 0))
+	if state.soundVolume != 60 || len(changes) != 1 || changes[0] != -10 {
+		t.Fatalf("left adjustment = volume %d, changes %v", state.soundVolume, changes)
+	}
+	state.handleKey(keyEvent(tcell.KeyRight, 0))
+	if state.soundVolume != 70 || len(changes) != 2 || changes[1] != 10 {
+		t.Fatalf("right adjustment = volume %d, changes %v", state.soundVolume, changes)
+	}
+	state.handleKey(keyEvent(tcell.KeyEnter, 0))
+	if state.soundVolume != 0 {
+		t.Errorf("Enter volume = %d, want muted", state.soundVolume)
+	}
+	if got := soundVolumeLabel(60); got != "Sound volume: [██████░░░░] 60%" {
+		t.Errorf("soundVolumeLabel() = %q", got)
+	}
+}
+
+func TestDrawOptionsMenuShowsSoundVolume(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 24)
+	draw(screen, menuState{page: optionsMenu, soundVolume: 60})
+	screen.Show()
+	contents, width, height := screen.GetContents()
+	if !strings.Contains(screenText(contents, width, height), "Sound volume: [██████░░░░] 60%") {
+		t.Error("options menu does not render the sound volume")
+	}
+}

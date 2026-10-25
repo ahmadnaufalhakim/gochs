@@ -73,8 +73,24 @@ func Run(loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, syn
 }
 
 func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, syncLichessRating LichessRatingSynchronizer, loadOfflinePuzzleRating OfflinePuzzleRatingLoader, stockfishPath string, lichessService LichessAccountService, onlineService OnlineBoardService) Result {
-	sounds := sound.NewPlayer()
+	sounds := sound.NewController(sound.NewPlayer())
 	state := newMenuState()
+	state.adjustSoundVolume = func(delta int) int {
+		volume := sounds.Adjust(delta)
+		state.soundVolume = volume
+		if volume > 0 {
+			sounds.Play(sound.Check)
+		}
+		return volume
+	}
+	state.toggleSoundMute = func() int {
+		volume := sounds.ToggleMute()
+		state.soundVolume = volume
+		if volume > 0 {
+			sounds.Play(sound.Check)
+		}
+		return volume
+	}
 	state.stockfishPath = stockfishPath
 	var game *localGameState
 	var puzzle *puzzleState
@@ -133,6 +149,7 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 					} else {
 						online = newOnline
 						online.sounds = sounds
+						online.adjustSoundVolume = state.adjustSoundVolume
 						online.startSounds()
 						if online.isFinished() {
 							online.playOnlineTerminal()
@@ -226,6 +243,7 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 							}
 						}
 						newGame.sounds = sounds
+						newGame.adjustSoundVolume = state.adjustSoundVolume
 						newGame.startSounds()
 						game = &newGame
 						state.result = Exit
@@ -292,6 +310,7 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 							}
 						}
 						newGame.sounds = sounds
+						newGame.adjustSoundVolume = state.adjustSoundVolume
 						newGame.startSounds()
 						game = &newGame
 						state.result = Exit
@@ -445,5 +464,6 @@ func newMenuState() menuState {
 		selected:    play,
 		splashIndex: rand.Intn(len(pieceSplashes)),
 		theme:       chess.WOOD,
+		soundVolume: sound.DefaultVolume,
 	}
 }

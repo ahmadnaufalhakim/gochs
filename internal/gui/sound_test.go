@@ -1,12 +1,14 @@
 package gui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	lichessapi "github.com/ahmadnaufalhakim/gochs/internal/lichess"
 	"github.com/ahmadnaufalhakim/gochs/internal/sound"
+	"github.com/gdamore/tcell/v2"
 )
 
 func recordingPlayer(events *[]sound.Event) sound.Player {
@@ -82,6 +84,85 @@ func TestOnlineSoundsUseAuthoritativeUpdatesOnce(t *testing.T) {
 	game.apply(onlineResult{event: lichessapi.GameStateEvent{State: state}})
 	game.apply(onlineResult{event: lichessapi.GameStateEvent{State: lichessapi.GameState{Moves: "e2e4", Status: "draw"}}})
 	assertSoundEvents(t, events, []sound.Event{sound.Game, sound.Move, sound.Draw, sound.Game})
+}
+
+func TestSpeculativeOnlineMoveDoesNotChangeSoundLifecycle(t *testing.T) {
+	var events []sound.Event
+	game := newLocalGameState(chess.WOOD)
+	game.sounds = recordingPlayer(&events)
+	game.suppressSoundEvents = true
+	from, _ := chess.ParseCoordinate("e2")
+	to, _ := chess.ParseCoordinate("e4")
+	game.makeMove(chess.NewMove(from, to, chess.DoublePawnPush))
+	game.suppressSoundEvents = false
+	assertSoundEvents(t, events, nil)
+	if game.soundEnded {
+		t.Fatal("speculative online move ended sound lifecycle")
+	}
+}
+
+func TestGameSoundVolumeKeysAdjustAndReportVolume(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	var changes []int
+	game.adjustSoundVolume = func(delta int) int {
+		changes = append(changes, delta)
+		return 60
+	}
+	if game.handleKey(keyEvent(tcell.KeyRune, ','), 80, 24) {
+		t.Fatal("volume key returned from game")
+	}
+	if len(changes) != 1 || changes[0] != -10 || game.message != "Sound volume: 60%" {
+		t.Errorf("local volume handling = changes %v, message %q", changes, game.message)
+	}
+	game.terminalTitle = "Draw · ½-½"
+	game.handleKey(keyEvent(tcell.KeyRune, '.'), 80, 24)
+	if len(changes) != 2 || changes[1] != 10 {
+		t.Errorf("terminal local volume handling = %v", changes)
+	}
+
+	online := onlineGameState{localGameState: newLocalGameState(chess.WOOD), state: lichessapi.GameState{Status: "draw"}}
+	online.adjustSoundVolume = func(delta int) int {
+		changes = append(changes, delta)
+		return 50
+	}
+	if online.handleKey(keyEvent(tcell.KeyRune, ','), nil, nil) {
+		t.Fatal("online volume key returned from game")
+	}
+	if len(changes) != 3 || changes[2] != -10 || online.message != "Sound volume: 50%" {
+		t.Errorf("online volume handling = changes %v, message %q", changes, online.message)
+	}
+}
+
+func TestReviewSoundHintShowsVolumeMessage(t *testing.T) {
+	if got := reviewSoundHint("Sound volume: 60%"); got != "Sound volume: 60%  ,/.: Sound volume  Esc: return to menu" {
+		t.Errorf("reviewSoundHint() = %q", got)
+	}
+}
+
+func TestGameSoundVolumeHintsRender(t *testing.T) {
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 24)
+	game := newLocalGameState(chess.WOOD)
+	drawLocalGame(screen, game)
+	screen.Show()
+	contents, width, height := screen.GetContents()
+	if !strings.Contains(screenText(contents, width, height), ",/.: sound volume") {
+		t.Error("active game does not render sound volume hint")
+	}
+
+	game.terminalTitle = "Draw · ½-½"
+	game.message = "Sound volume: 60%"
+	screen.Clear()
+	drawLocalGame(screen, game)
+	screen.Show()
+	contents, width, height = screen.GetContents()
+	if !strings.Contains(screenText(contents, width, height), "Sound volume: 60%  ,/.: Sound volume  Esc: return to menu") {
+		t.Error("finished game does not render volume message and return hint")
+	}
 }
 
 func assertSoundEvents(t *testing.T, got, want []sound.Event) {

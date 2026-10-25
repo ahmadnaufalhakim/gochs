@@ -2,6 +2,7 @@
 package sound
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +32,57 @@ type PlayerFunc func(Event)
 
 func (f PlayerFunc) Play(event Event) { f(event) }
 
+const (
+	DefaultVolume = 70
+	MaxVolume     = 100
+)
+
+// Controller applies a shared session volume while retaining the event-based
+// Player interface used by game code and tests.
+type Controller struct {
+	player         Player
+	volume         int
+	previousVolume int
+}
+
+func NewController(player Player) *Controller {
+	return &Controller{player: player, volume: DefaultVolume, previousVolume: DefaultVolume}
+}
+
+func (c *Controller) Volume() int { return c.volume }
+
+func (c *Controller) Adjust(delta int) int {
+	c.volume = min(MaxVolume, max(0, c.volume+delta))
+	if c.volume > 0 {
+		c.previousVolume = c.volume
+	}
+	return c.volume
+}
+
+func (c *Controller) ToggleMute() int {
+	if c.volume > 0 {
+		c.previousVolume = c.volume
+		c.volume = 0
+		return c.volume
+	}
+	c.volume = c.previousVolume
+	if c.volume == 0 {
+		c.volume = DefaultVolume
+	}
+	return c.volume
+}
+
+func (c *Controller) Play(event Event) {
+	if c.volume == 0 || c.player == nil {
+		return
+	}
+	if player, ok := c.player.(interface{ PlayVolume(Event, int) }); ok {
+		player.PlayVolume(event, c.volume)
+		return
+	}
+	c.player.Play(event)
+}
+
 type paplayPlayer struct {
 	once sync.Once
 	dir  string
@@ -42,6 +94,10 @@ type paplayPlayer struct {
 func NewPlayer() Player { return &paplayPlayer{} }
 
 func (p *paplayPlayer) Play(event Event) {
+	p.PlayVolume(event, MaxVolume)
+}
+
+func (p *paplayPlayer) PlayVolume(event Event, volume int) {
 	p.once.Do(p.materialize)
 	if p.dir == "" {
 		return
@@ -50,7 +106,11 @@ func (p *paplayPlayer) Play(event Event) {
 	if _, err := os.Stat(path); err != nil {
 		return
 	}
-	command := exec.Command(p.cmd, append(p.args, path)...)
+	args := append([]string(nil), p.args...)
+	if p.cmd == "paplay" {
+		args = append(args, "--volume", fmt.Sprintf("%d", volume*65536/MaxVolume))
+	}
+	command := exec.Command(p.cmd, append(args, path)...)
 	if command.Start() == nil {
 		go func() { _ = command.Wait() }()
 	}
