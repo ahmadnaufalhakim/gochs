@@ -11,6 +11,7 @@ import (
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	"github.com/ahmadnaufalhakim/gochs/internal/engine"
 	"github.com/ahmadnaufalhakim/gochs/internal/pgn"
+	"github.com/ahmadnaufalhakim/gochs/internal/sound"
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
 )
@@ -64,6 +65,10 @@ type localGameState struct {
 	engineDifficulty  int
 	engineThinking    bool
 	engineRandom      func(int) int
+	sounds            sound.Player
+	soundStarted      bool
+	soundEnded        bool
+	lowTimePlayed     [chess.PieceColorCount]bool
 }
 
 type boardLayout struct {
@@ -419,6 +424,7 @@ func (g *localGameState) makeMove(move chess.Move) {
 	g.message = ""
 	g.recordPosition()
 	g.updateTerminalResult()
+	g.playMove(move)
 	if g.timeControl.isTimed() && !g.hasTerminalResult() {
 		g.clockRemaining[movingColor] += g.timeControl.increment
 		g.turnStarted = time.Now()
@@ -433,6 +439,64 @@ func (g *localGameState) makeMove(move chess.Move) {
 		g.perspective = g.board.ColorToMove
 	}
 	g.startEngineTurn()
+}
+
+func (g *localGameState) startSounds() {
+	if g.soundStarted {
+		return
+	}
+	g.soundStarted = true
+	g.play(sound.Game)
+}
+
+func (g *localGameState) endSounds() {
+	if g.soundEnded {
+		return
+	}
+	g.soundEnded = true
+	g.play(sound.Game)
+}
+
+func (g *localGameState) playMove(move chess.Move) {
+	g.play(sound.Move)
+	if isCapture(move) {
+		g.play(sound.Capture)
+	}
+	if g.hasTerminalResult() {
+		if len(chess.GenerateLegalMoves(g.board)) == 0 && g.board.IsColorInCheck(g.board.ColorToMove) {
+			g.play(sound.Checkmate)
+		} else if len(chess.GenerateLegalMoves(g.board)) == 0 {
+			g.play(sound.Stalemate)
+		} else {
+			g.play(sound.Draw)
+		}
+		g.endSounds()
+		return
+	}
+	if g.board.IsColorInCheck(g.board.ColorToMove) {
+		g.play(sound.Check)
+	}
+}
+
+func (g *localGameState) playReplayMove(move chess.Move) {
+	g.play(sound.Move)
+	if isCapture(move) {
+		g.play(sound.Capture)
+	}
+}
+
+func (g *localGameState) play(event sound.Event) {
+	if g.sounds != nil {
+		g.sounds.Play(event)
+	}
+}
+
+func isCapture(move chess.Move) bool {
+	switch move.Flag() {
+	case chess.Capture, chess.EnPassant, chess.PromoteCaptureKnight, chess.PromoteCaptureBishop, chess.PromoteCaptureRook, chess.PromoteCaptureQueen:
+		return true
+	}
+	return false
 }
 
 func (g *localGameState) flipBoard() {
@@ -504,6 +568,7 @@ func (g *localGameState) resign() {
 	g.hoveredPromotion = 0
 	g.uciInput = ""
 	g.message = ""
+	g.endSounds()
 }
 
 func (g localGameState) hasResigned() bool {
@@ -686,6 +751,13 @@ func (g *localGameState) moveReplay(direction int) {
 		return
 	}
 	g.viewPly = viewPly
+	moveIndex := viewPly - 1
+	if direction < 0 {
+		moveIndex = previousPly - 1
+	}
+	if moveIndex >= 0 && moveIndex < len(g.moves) {
+		g.playReplayMove(g.moves[moveIndex])
+	}
 	if replayFullmoveRow(previousPly) != replayFullmoveRow(viewPly) {
 		g.syncHistoryToView(direction)
 	}

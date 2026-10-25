@@ -13,6 +13,7 @@ import (
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	lichessapi "github.com/ahmadnaufalhakim/gochs/internal/lichess"
 	"github.com/ahmadnaufalhakim/gochs/internal/pgn"
+	"github.com/ahmadnaufalhakim/gochs/internal/sound"
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
 )
@@ -292,6 +293,49 @@ func (g *onlineGameState) rebuild(state lichessapi.GameState) error {
 	return nil
 }
 
+func (g *onlineGameState) playAuthoritativeUpdate(previousMoves []chess.Move, previousStatus string) {
+	matchingPrefix := len(g.moves) >= len(previousMoves)
+	if matchingPrefix {
+		for index, move := range previousMoves {
+			if g.moves[index] != move {
+				matchingPrefix = false
+				break
+			}
+		}
+	}
+	if matchingPrefix {
+		for index, move := range g.moves[len(previousMoves):] {
+			g.play(sound.Move)
+			if isCapture(move) {
+				g.play(sound.Capture)
+			}
+			board := g.positions[len(previousMoves)+index+1]
+			if board.IsColorInCheck(board.ColorToMove) && len(chess.GenerateLegalMoves(board)) > 0 {
+				g.play(sound.Check)
+			}
+		}
+	}
+	if onlineInProgressStatus(previousStatus) && g.isFinished() {
+		g.playOnlineTerminal()
+	}
+}
+
+func (g *onlineGameState) playOnlineTerminal() {
+	switch g.state.Status {
+	case "mate":
+		g.play(sound.Checkmate)
+	case "stalemate":
+		g.play(sound.Stalemate)
+	case "draw":
+		g.play(sound.Draw)
+	}
+	g.endSounds()
+}
+
+func onlineInProgressStatus(status string) bool {
+	return status == "created" || status == "started"
+}
+
 func (g *onlineGameState) advanceClock(now time.Time) {
 	if !g.isInProgress() || g.clockUpdated.IsZero() {
 		return
@@ -307,8 +351,20 @@ func (g *onlineGameState) advanceClock(now time.Time) {
 		g.clockRemaining[color] -= elapsed
 	}
 	g.clockUpdated = now
+	g.playOnlineLowTime(color)
 	if g.pendingDraw || g.pendingTakeback {
 		g.offerAnimation = (g.offerAnimation + 1) % 3
+	}
+}
+
+func (g *onlineGameState) playOnlineLowTime(color chess.PieceColor) {
+	if g.lowTimePlayed[color] || g.seek.TimeSeconds <= 0 {
+		return
+	}
+	threshold := time.Duration(g.seek.TimeSeconds+40*g.seek.IncrementSeconds) * time.Second / 10
+	if g.clockRemaining[color] <= threshold {
+		g.lowTimePlayed[color] = true
+		g.play(sound.LowTime)
 	}
 }
 
@@ -379,11 +435,20 @@ func (g *onlineGameState) apply(result onlineResult) {
 		} else {
 			next.perspective = g.perspective
 			next.seek = g.seek
+			next.sounds = g.sounds
+			next.soundStarted = g.soundStarted
+			next.soundEnded = g.soundEnded
+			next.lowTimePlayed = g.lowTimePlayed
+			previousMoves, previousStatus := g.moves, g.state.Status
 			*g = *next
+			g.playAuthoritativeUpdate(previousMoves, previousStatus)
 		}
 	case lichessapi.GameStateEvent:
+		previousMoves, previousStatus := g.moves, g.state.Status
 		if err := g.rebuild(event.State); err != nil {
 			g.message = err.Error()
+		} else {
+			g.playAuthoritativeUpdate(previousMoves, previousStatus)
 		}
 	}
 }
@@ -727,6 +792,9 @@ func drawOnlineGame(screen tcell.Screen, game onlineGameState) {
 	drawString(screen, layout.x-2, layout.y+14, message, mutedStyle)
 	drawOnlineActionButtons(screen, game, layout)
 	drawString(screen, layout.x-2, layout.y+15, "Enter: submit move", mutedStyle)
+	if len(display.promotionChoices) != 0 {
+		drawPromotionPicker(screen, display, layout)
+	}
 }
 
 func (g onlineGameState) onlineTerminalTitle() string {

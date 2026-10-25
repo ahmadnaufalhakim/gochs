@@ -164,6 +164,33 @@ func TestOnlineGameHighlightsHoverablePiece(t *testing.T) {
 	}
 }
 
+func TestOnlineGameRendersPromotionPicker(t *testing.T) {
+	game := onlineGameState{
+		localGameState: newLocalGameState(chess.WOOD),
+		state:          lichessapi.GameState{Status: "started"},
+	}
+	from, _ := chess.ParseCoordinate("a7")
+	to, _ := chess.ParseCoordinate("a8")
+	game.promotionChoices = []chess.Move{
+		chess.NewMove(from, to, chess.PromoteQueen),
+		chess.NewMove(from, to, chess.PromoteRook),
+		chess.NewMove(from, to, chess.PromoteBishop),
+		chess.NewMove(from, to, chess.PromoteKnight),
+	}
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 24)
+	drawOnlineGame(screen, game)
+	screen.Show()
+	cells, width, height := screen.GetContents()
+	if !strings.Contains(screenText(cells, width, height), "♕") {
+		t.Fatal("online promotion picker was not rendered")
+	}
+}
+
 func TestFinishedOnlineGameReviewControls(t *testing.T) {
 	game := onlineGameState{localGameState: newLocalGameState(chess.WOOD), state: lichessapi.GameState{Status: "mate"}}
 	layout, ok := localBoardLayout(80, 24)

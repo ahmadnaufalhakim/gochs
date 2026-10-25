@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
+	"github.com/ahmadnaufalhakim/gochs/internal/sound"
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
 )
@@ -40,10 +41,23 @@ func (g *localGameState) advanceClock(now time.Time) {
 		g.hoveredSquare = nil
 		g.promotionChoices = nil
 		g.uciInput = ""
+		g.endSounds()
 		return
 	}
 	g.clockRemaining[color] -= elapsed
 	g.turnStarted = now
+	g.playLowTime(color)
+}
+
+func (g *localGameState) playLowTime(color chess.PieceColor) {
+	if !g.timeControl.isTimed() || g.lowTimePlayed[color] {
+		return
+	}
+	threshold := (g.timeControl.initial + 40*g.timeControl.increment) / 10
+	if g.clockRemaining[color] <= threshold {
+		g.lowTimePlayed[color] = true
+		g.play(sound.LowTime)
+	}
 }
 
 func drawClocks(screen tcell.Screen, game localGameState, layout boardLayout) {

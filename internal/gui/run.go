@@ -10,6 +10,7 @@ import (
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	"github.com/ahmadnaufalhakim/gochs/internal/entity"
 	lichessapi "github.com/ahmadnaufalhakim/gochs/internal/lichess"
+	"github.com/ahmadnaufalhakim/gochs/internal/sound"
 	"github.com/gdamore/tcell/v2"
 )
 
@@ -72,6 +73,7 @@ func Run(loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, syn
 }
 
 func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt PuzzleAttemptRecorder, syncLichessRating LichessRatingSynchronizer, loadOfflinePuzzleRating OfflinePuzzleRatingLoader, stockfishPath string, lichessService LichessAccountService, onlineService OnlineBoardService) Result {
+	sounds := sound.NewPlayer()
 	state := newMenuState()
 	state.stockfishPath = stockfishPath
 	var game *localGameState
@@ -130,6 +132,11 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 						state.lichessMessage = err.Error()
 					} else {
 						online = newOnline
+						online.sounds = sounds
+						online.startSounds()
+						if online.isFinished() {
+							online.playOnlineTerminal()
+						}
 						online.seek = result.seek
 						online.requestContext = onlineContext
 						onlineVisible = true
@@ -218,6 +225,8 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 								continue
 							}
 						}
+						newGame.sounds = sounds
+						newGame.startSounds()
 						game = &newGame
 						state.result = Exit
 					} else if state.result == OnlineGame {
@@ -282,6 +291,8 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 								continue
 							}
 						}
+						newGame.sounds = sounds
+						newGame.startSounds()
 						game = &newGame
 						state.result = Exit
 					} else if state.result == OnlineGame {
