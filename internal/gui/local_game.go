@@ -938,7 +938,7 @@ func drawMoveHistory(screen tcell.Screen, game localGameState, layout boardLayou
 		return
 	}
 
-	drawString(screen, x, layout.y-2, gameTitle(game), titleStyle)
+	drawString(screen, x, layout.y-1, gameTitle(game), titleStyle)
 	drawMoveHistoryBorder(screen, x, layout.y)
 	start := game.historyScroll
 	if !game.hasTerminalResult() {
