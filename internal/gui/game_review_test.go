@@ -6,6 +6,7 @@ import (
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
 	"github.com/ahmadnaufalhakim/gochs/internal/engine"
+	"github.com/ahmadnaufalhakim/gochs/internal/sound"
 	"github.com/gdamore/tcell/v2"
 )
 
@@ -54,7 +55,7 @@ func TestBuildMoveReviewsNormalizesBlackToMoveScores(t *testing.T) {
 	}
 }
 
-func TestGameReviewVariationDoesNotChangeGamePositions(t *testing.T) {
+func TestGameReviewVariationStartsAtBestMoveAndResumesGame(t *testing.T) {
 	game := newLocalGameState(chess.WOOD)
 	game.uciInput = "e2e4"
 	game.submitUCI()
@@ -62,21 +63,43 @@ func TestGameReviewVariationDoesNotChangeGamePositions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse best move: %v", err)
 	}
+	variationBoard := game.positions[0]
+	if err := variationBoard.MakeMove(best); err != nil {
+		t.Fatal(err)
+	}
+	continuation, err := variationBoard.ParseUCI("d7d5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var events []sound.Event
+	game.sounds = recordingPlayer(&events)
 	game.terminalTitle = "Draw · ½-½"
 	game.viewPly = 1
-	game.review = gameReview{active: true, moves: []moveReview{{classification: moveExcellent, bestMove: best, bestLine: []chess.Move{best}}}}
+	game.review = gameReview{active: true, moves: []moveReview{{classification: moveExcellent, bestMove: best, bestLine: []chess.Move{best, continuation}}}}
 	realPosition := game.positions[1]
 	game.startVariation()
-	if game.review.variation == nil || len(game.review.variation.positions) != 2 {
+	if game.review.variation == nil || len(game.review.variation.positions) != 3 {
 		t.Fatal("variation was not created")
 	}
-	game.moveReplay(1)
 	if game.boardForDisplay() != game.review.variation.positions[1] {
+		t.Fatal("best move was not displayed immediately")
+	}
+	game.moveReplay(1)
+	if game.boardForDisplay() != game.review.variation.positions[2] {
 		t.Fatal("variation position was not displayed")
+	}
+	game.moveReplay(-1)
+	game.moveReplay(-1)
+	if game.review.variation != nil {
+		t.Fatal("scrolling before the best move did not leave variation view")
 	}
 	if game.positions[1] != realPosition {
 		t.Fatal("variation changed the real game position")
 	}
+	if game.boardForDisplay() != realPosition {
+		t.Fatal("game position was not restored after variation")
+	}
+	assertSoundEvents(t, events, []sound.Event{sound.Move, sound.Move, sound.Move, sound.Move})
 }
 
 func TestFinishedGameReviewButtonStartsReview(t *testing.T) {

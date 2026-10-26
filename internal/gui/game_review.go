@@ -304,7 +304,8 @@ func (g *localGameState) startVariation() {
 		}
 		positions = append(positions, board)
 	}
-	g.review.variation = &reviewVariation{sourcePly: g.viewPly, positions: positions}
+	g.review.variation = &reviewVariation{sourcePly: g.viewPly, positions: positions, viewPly: 1}
+	g.playReplayMove(review.bestLine[0])
 }
 
 func (g localGameState) reviewVerdict() string {

@@ -797,7 +797,29 @@ func (g *localGameState) syncHistoryAfterClick(row int) {
 
 func (g *localGameState) moveReplay(direction int) {
 	if g.review.variation != nil {
-		g.review.variation.viewPly = min(max(0, g.review.variation.viewPly+direction), len(g.review.variation.positions)-1)
+		variation := g.review.variation
+		if direction < 0 && variation.viewPly <= 1 {
+			g.review.variation = nil
+			if variation.sourcePly > 0 && variation.sourcePly <= len(g.moves) {
+				g.playReplayMove(g.moves[variation.sourcePly-1])
+			}
+			return
+		}
+		previousPly := variation.viewPly
+		viewPly := min(max(1, variation.viewPly+direction), len(variation.positions)-1)
+		if viewPly == previousPly {
+			return
+		}
+		variation.viewPly = viewPly
+		if review, ok := g.selectedMoveReview(); ok {
+			moveIndex := viewPly - 1
+			if direction < 0 {
+				moveIndex = previousPly - 1
+			}
+			if moveIndex >= 0 && moveIndex < len(review.bestLine) {
+				g.playReplayMove(review.bestLine[moveIndex])
+			}
+		}
 		return
 	}
 	previousPly := g.viewPly
