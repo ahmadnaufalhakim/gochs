@@ -170,6 +170,13 @@ func run(screen tcell.Screen, loadPuzzle PuzzleLoader, recordPuzzleAttempt Puzzl
 				}
 			} else {
 				online.apply(result)
+				if online.reviewCancelRequested {
+					if reviewCancel != nil {
+						reviewCancel()
+						reviewCancel = nil
+					}
+					online.reviewCancelRequested = false
+				}
 				online.loadRatingChanges(onlineService, onlineResults)
 				if (online.isFinished() || result.fatal) && onlineCancel != nil {
 					onlineCancel()

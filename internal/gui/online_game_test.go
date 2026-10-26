@@ -267,6 +267,53 @@ func TestFinishedOnlineGameScrollsBoardHistory(t *testing.T) {
 	}
 }
 
+func TestOnlineRebuildInvalidatesReviewForDifferentSameLengthMoves(t *testing.T) {
+	full := lichessapi.GameFullEvent{Game: lichessapi.Game{ID: "game", White: lichessapi.Player{ID: "me"}, Black: lichessapi.Player{ID: "opponent"}}, InitialFEN: "startpos", State: lichessapi.GameState{Moves: "e2e4", Status: "draw"}}
+	game, err := newOnlineGame(full, "me", "Me", chess.WOOD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	game.review = gameReview{complete: true, moves: []moveReview{{classification: moveBest}}}
+	previousGeneration := game.reviewGeneration
+	if err := game.rebuild(lichessapi.GameState{Moves: "d2d4", Status: "draw"}); err != nil {
+		t.Fatal(err)
+	}
+	if game.review.complete || len(game.review.moves) != 0 {
+		t.Fatalf("review cache survived move correction: %#v", game.review)
+	}
+	if game.reviewGeneration != previousGeneration+1 {
+		t.Fatalf("review generation = %d, want %d", game.reviewGeneration, previousGeneration+1)
+	}
+}
+
+func TestOnlineFullRefreshInvalidatesReviewGeneration(t *testing.T) {
+	full := lichessapi.GameFullEvent{Game: lichessapi.Game{ID: "game", White: lichessapi.Player{ID: "me"}, Black: lichessapi.Player{ID: "opponent"}}, InitialFEN: "startpos", State: lichessapi.GameState{Moves: "e2e4", Status: "draw"}}
+	game, err := newOnlineGame(full, "me", "Me", chess.WOOD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	game.requestContext = ctx
+	game.reviewGeneration = 7
+	game.review = gameReview{active: true, analyzing: true}
+	game.apply(onlineResult{event: full, accountID: "me", accountName: "Me"})
+	cancel()
+	select {
+	case <-game.boardContext().Done():
+	default:
+		t.Fatal("full refresh did not preserve the online request context")
+	}
+	if game.reviewGeneration != 8 || game.review.active || game.review.analyzing {
+		t.Fatalf("full refresh review state = generation %d, review %#v", game.reviewGeneration, game.review)
+	}
+
+	game.startReview()
+	game.applyReviewResult(reviewResult{generation: 7, progress: 99, total: 99, done: true, moves: []moveReview{{classification: moveBlunder}}})
+	if !game.review.analyzing || game.review.progress != 0 || game.review.complete {
+		t.Fatalf("stale full-refresh result changed review: %#v", game.review)
+	}
+}
+
 func TestFinishedOnlineGameMaterialUsesScrolledPosition(t *testing.T) {
 	full := lichessapi.GameFullEvent{Game: lichessapi.Game{ID: "game", White: lichessapi.Player{ID: "me"}, Black: lichessapi.Player{ID: "opponent"}}, InitialFEN: "startpos", State: lichessapi.GameState{Moves: "e2e4 d7d5 e4d5", Status: "mate", Winner: "white"}}
 	game, err := newOnlineGame(full, "me", "Me", chess.WOOD)

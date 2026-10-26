@@ -251,6 +251,9 @@ func (g *onlineGameState) rebuild(state lichessapi.GameState) error {
 	if err != nil {
 		return err
 	}
+	if !sameMoveSequence(g.moves, moves) {
+		g.invalidateReview()
+	}
 	g.moves = moves
 	g.history = nil
 	g.positions = []chess.Board{initial}
@@ -291,6 +294,18 @@ func (g *onlineGameState) rebuild(state lichessapi.GameState) error {
 	g.clockRemaining[chess.Black] = time.Duration(state.BlackTime) * time.Millisecond
 	g.clockUpdated = time.Now()
 	return nil
+}
+
+func sameMoveSequence(left, right []chess.Move) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index, move := range left {
+		if move != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (g *onlineGameState) playAuthoritativeUpdate(previousMoves []chess.Move, previousStatus string) {
@@ -433,8 +448,11 @@ func (g *onlineGameState) apply(result onlineResult) {
 		if next, err := newOnlineGame(event, result.accountID, result.accountName, g.theme); err != nil {
 			g.message = err.Error()
 		} else {
+			cancelReview := g.review.analyzing
+			next.reviewGeneration = g.reviewGeneration + 1
 			next.perspective = g.perspective
 			next.seek = g.seek
+			next.requestContext = g.requestContext
 			next.sounds = g.sounds
 			next.adjustSoundVolume = g.adjustSoundVolume
 			next.soundStarted = g.soundStarted
@@ -442,6 +460,7 @@ func (g *onlineGameState) apply(result onlineResult) {
 			next.lowTimePlayed = g.lowTimePlayed
 			previousMoves, previousStatus := g.moves, g.state.Status
 			*g = *next
+			g.reviewCancelRequested = cancelReview
 			g.playAuthoritativeUpdate(previousMoves, previousStatus)
 		}
 	case lichessapi.GameStateEvent:

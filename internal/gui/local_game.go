@@ -26,52 +26,54 @@ const (
 )
 
 type localGameState struct {
-	board               chess.Board
-	theme               chess.ColorTheme
-	perspective         chess.PieceColor
-	autoFlip            bool
-	selectedSource      *chess.Square
-	hoveredSquare       *chess.Square
-	promotionChoices    []chess.Move
-	hoveredPromotion    rune
-	uciInput            string
-	message             string
-	history             []string
-	clockHistory        []time.Duration
-	moves               []chess.Move
-	positions           []chess.Board
-	viewPly             int
-	historyScroll       int
-	lastMove            chess.Move
-	hasLastMove         bool
-	positionCounts      map[uint64]uint
-	drawReason          string
-	terminalTitle       string
-	timedOutBy          *chess.PieceColor
-	timeControl         timeControl
-	clockRemaining      [chess.PieceColorCount]time.Duration
-	turnStarted         time.Time
-	startedAt           time.Time
-	resignPending       bool
-	hoveredResign       bool
-	hoveredFlip         bool
-	hoveredSavePGN      bool
-	hoveredSaveClocks   bool
-	exportMessage       string
-	resignedBy          *chess.PieceColor
-	computerColor       *chess.PieceColor
-	stockfish           *engine.Client
-	engineResults       chan engineResult
-	engineDifficulty    int
-	engineThinking      bool
-	engineRandom        func(int) int
-	sounds              sound.Player
-	suppressSoundEvents bool
-	adjustSoundVolume   func(int) int
-	soundStarted        bool
-	soundEnded          bool
-	lowTimePlayed       [chess.PieceColorCount]bool
-	review              gameReview
+	board                 chess.Board
+	theme                 chess.ColorTheme
+	perspective           chess.PieceColor
+	autoFlip              bool
+	selectedSource        *chess.Square
+	hoveredSquare         *chess.Square
+	promotionChoices      []chess.Move
+	hoveredPromotion      rune
+	uciInput              string
+	message               string
+	history               []string
+	clockHistory          []time.Duration
+	moves                 []chess.Move
+	positions             []chess.Board
+	viewPly               int
+	historyScroll         int
+	lastMove              chess.Move
+	hasLastMove           bool
+	positionCounts        map[uint64]uint
+	drawReason            string
+	terminalTitle         string
+	timedOutBy            *chess.PieceColor
+	timeControl           timeControl
+	clockRemaining        [chess.PieceColorCount]time.Duration
+	turnStarted           time.Time
+	startedAt             time.Time
+	resignPending         bool
+	hoveredResign         bool
+	hoveredFlip           bool
+	hoveredSavePGN        bool
+	hoveredSaveClocks     bool
+	exportMessage         string
+	resignedBy            *chess.PieceColor
+	computerColor         *chess.PieceColor
+	stockfish             *engine.Client
+	engineResults         chan engineResult
+	engineDifficulty      int
+	engineThinking        bool
+	engineRandom          func(int) int
+	sounds                sound.Player
+	suppressSoundEvents   bool
+	adjustSoundVolume     func(int) int
+	soundStarted          bool
+	soundEnded            bool
+	lowTimePlayed         [chess.PieceColorCount]bool
+	review                gameReview
+	reviewGeneration      uint64
+	reviewCancelRequested bool
 }
 
 type boardLayout struct {

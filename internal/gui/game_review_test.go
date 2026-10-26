@@ -116,6 +116,42 @@ func TestFinishedGameReviewButtonStartsReview(t *testing.T) {
 	}
 }
 
+func TestGameReviewReusesCompletedAnalysisForSameGame(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.uciInput = "e2e4"
+	game.submitUCI()
+	game.terminalTitle = "Draw · ½-½"
+	game.review = gameReview{active: true, complete: true, moves: []moveReview{{classification: moveBest}}}
+	game.leaveReview()
+	game.startReview()
+	if !game.review.active || game.review.analyzing || game.review.requested || !game.review.complete {
+		t.Fatalf("cached review state = %#v", game.review)
+	}
+
+	newGame := newLocalGameState(chess.WOOD)
+	newGame.terminalTitle = "Draw · ½-½"
+	newGame.startReview()
+	if !newGame.review.analyzing || !newGame.review.requested || newGame.review.complete {
+		t.Fatalf("new game review state = %#v", newGame.review)
+	}
+}
+
+func TestGameReviewDiscardsResultFromCancelledGeneration(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.terminalTitle = "Draw · ½-½"
+	game.startReview()
+	staleGeneration := game.reviewGeneration
+	game.leaveReview()
+	game.startReview()
+	if game.reviewGeneration == staleGeneration {
+		t.Fatal("new review did not use a new generation")
+	}
+	game.applyReviewResult(reviewResult{generation: staleGeneration, progress: 99, total: 99, done: true, moves: []moveReview{{classification: moveBlunder}}})
+	if !game.review.analyzing || game.review.progress != 0 || game.review.complete {
+		t.Fatalf("stale result changed new review: %#v", game.review)
+	}
+}
+
 func TestGameReviewPanelShowsVerdictBestMoveAndEvaluation(t *testing.T) {
 	game := newLocalGameState(chess.WOOD)
 	game.uciInput = "e2e4"

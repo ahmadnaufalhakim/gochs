@@ -69,6 +69,7 @@ type reviewVariation struct {
 type gameReview struct {
 	active          bool
 	analyzing       bool
+	complete        bool
 	requested       bool
 	progress, total int
 	moves           []moveReview
@@ -79,21 +80,22 @@ type gameReview struct {
 }
 
 type reviewResult struct {
-	target   *localGameState
-	progress int
-	total    int
-	moves    []moveReview
-	err      error
-	done     bool
+	target     *localGameState
+	generation uint64
+	progress   int
+	total      int
+	moves      []moveReview
+	err        error
+	done       bool
 }
 
-func startGameReview(ctx context.Context, target *localGameState, stockfishPath string, results chan<- reviewResult) {
+func startGameReview(ctx context.Context, target *localGameState, generation uint64, stockfishPath string, results chan<- reviewResult) {
 	positions := append([]chess.Board(nil), target.positions...)
 	moves := append([]chess.Move(nil), target.moves...)
 	go func() {
-		client, err := engine.Start(context.Background(), engine.Config{Path: stockfishPath, Difficulty: 8})
+		client, err := engine.Start(ctx, engine.Config{Path: stockfishPath, Difficulty: 8})
 		if err != nil {
-			sendReviewResult(ctx, results, reviewResult{target: target, err: err, done: true})
+			sendReviewResult(ctx, results, reviewResult{target: target, generation: generation, err: err, done: true})
 			return
 		}
 		defer client.Close()
@@ -108,15 +110,15 @@ func startGameReview(ctx context.Context, target *localGameState, stockfishPath 
 					analyses[index], err = client.Analyze(ctx, fen, gameReviewDepth)
 				}
 				if err != nil {
-					sendReviewResult(ctx, results, reviewResult{target: target, err: err, done: true})
+					sendReviewResult(ctx, results, reviewResult{target: target, generation: generation, err: err, done: true})
 					return
 				}
 			}
-			sendReviewResult(ctx, results, reviewResult{target: target, progress: index + 1, total: len(positions)})
+			sendReviewResult(ctx, results, reviewResult{target: target, generation: generation, progress: index + 1, total: len(positions)})
 		}
 
 		reviews, err := buildMoveReviews(positions, moves, analyses)
-		sendReviewResult(ctx, results, reviewResult{target: target, progress: len(positions), total: len(positions), moves: reviews, err: err, done: true})
+		sendReviewResult(ctx, results, reviewResult{target: target, generation: generation, progress: len(positions), total: len(positions), moves: reviews, err: err, done: true})
 	}()
 }
 
@@ -132,7 +134,7 @@ func terminalPositionAnalysis(position chess.Board) (engine.Analysis, bool) {
 
 func beginGameReview(target *localGameState, stockfishPath string, results chan<- reviewResult) context.CancelFunc {
 	ctx, cancel := context.WithCancel(context.Background())
-	startGameReview(ctx, target, stockfishPath, results)
+	startGameReview(ctx, target, target.reviewGeneration, stockfishPath, results)
 	return cancel
 }
 
@@ -260,11 +262,18 @@ func (g *localGameState) startReview() {
 	if g.review.analyzing {
 		return
 	}
+	if g.review.complete && len(g.review.moves) == len(g.moves) {
+		g.review.active = true
+		g.review.variation = nil
+		g.review.hoveredBestMove = false
+		return
+	}
+	g.reviewGeneration++
 	g.review = gameReview{active: true, analyzing: true, requested: true, total: len(g.positions)}
 }
 
 func (g *localGameState) applyReviewResult(result reviewResult) {
-	if !g.review.analyzing {
+	if result.generation != g.reviewGeneration || !g.review.analyzing {
 		return
 	}
 	g.review.progress = result.progress
@@ -278,10 +287,25 @@ func (g *localGameState) applyReviewResult(result reviewResult) {
 		return
 	}
 	g.review.moves = result.moves
+	g.review.complete = true
+}
+
+func (g *localGameState) invalidateReview() {
+	if g.review.analyzing {
+		g.reviewCancelRequested = true
+	}
+	g.reviewGeneration++
+	g.review = gameReview{}
 }
 
 func (g *localGameState) leaveReview() {
-	g.review = gameReview{}
+	if !g.review.complete {
+		g.review = gameReview{}
+		return
+	}
+	g.review.active = false
+	g.review.variation = nil
+	g.review.hoveredBestMove = false
 }
 
 func (g *localGameState) selectedMoveReview() (*moveReview, bool) {
