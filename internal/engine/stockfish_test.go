@@ -42,6 +42,9 @@ func TestParseAnalysis(t *testing.T) {
 	if analysis.Depth != 18 || analysis.Score.IsMate || analysis.Score.Centipawns != -37 {
 		t.Errorf("analysis = %#v", analysis)
 	}
+	if len(analysis.Lines) != 1 || analysis.Lines[0].Rank != 1 {
+		t.Errorf("lines = %#v, want one rank-1 line", analysis.Lines)
+	}
 	if got, want := analysis.PV, []string{"e2e4", "e7e5", "g1f3"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Errorf("PV = %q, want %q", got, want)
 	}
@@ -52,8 +55,67 @@ func TestParseAnalysisMateAndSinglePV(t *testing.T) {
 	if !ok || !analysis.Score.IsMate || analysis.Score.Mate != -3 {
 		t.Errorf("parseAnalysis(mate) = %#v, %t", analysis, ok)
 	}
-	if _, ok := parseAnalysis("info depth 9 multipv 2 score cp 10 pv h7h8q"); ok {
-		t.Error("parseAnalysis() accepted a non-primary variation")
+	analysis, ok = parseAnalysis("info depth 9 multipv 2 score cp 10 pv h7h8q")
+	if !ok || len(analysis.Lines) != 1 || analysis.Lines[0].Rank != 2 {
+		t.Errorf("parseAnalysis(rank 2) = %#v, %t", analysis, ok)
+	}
+	if analysis.Depth != 0 || analysis.PV != nil {
+		t.Errorf("non-primary analysis populated legacy fields: %#v", analysis)
+	}
+}
+
+func TestParseAnalysisRejectsBoundScore(t *testing.T) {
+	if _, ok := parseAnalysis("info depth 16 multipv 2 score cp 50 lowerbound pv d2d4"); ok {
+		t.Fatal("parseAnalysis() accepted a bounded score")
+	}
+}
+
+func TestValidConfig(t *testing.T) {
+	for _, multiPV := range []int{0, 1, 2, 3} {
+		if err := validConfig(Config{MultiPV: multiPV}); err != nil {
+			t.Errorf("validConfig(%d) = %v", multiPV, err)
+		}
+	}
+	for _, multiPV := range []int{-1, 4} {
+		if err := validConfig(Config{MultiPV: multiPV}); err == nil {
+			t.Errorf("validConfig(%d) returned nil", multiPV)
+		}
+	}
+}
+
+func TestMergeAnalysisKeepsFreshLinesByRank(t *testing.T) {
+	first, _ := parseAnalysis("info depth 10 multipv 1 score cp 25 pv e2e4 e7e5")
+	second, _ := parseAnalysis("info depth 10 multipv 2 score cp 12 pv d2d4 d7d5")
+	updated, _ := parseAnalysis("info depth 11 multipv 1 score mate 3 pv g1f3 d7d5")
+
+	analysis := mergeAnalysis(Analysis{}, first)
+	analysis = mergeAnalysis(analysis, second)
+	analysis = mergeAnalysis(analysis, updated)
+	analysis.BestMove = "g1f3"
+
+	if analysis.BestMove != "g1f3" || analysis.Depth != 11 || !analysis.Score.IsMate || analysis.Score.Mate != 3 {
+		t.Errorf("primary analysis = %#v", analysis)
+	}
+	if len(analysis.Lines) != 1 {
+		t.Fatalf("line count = %d, want 1", len(analysis.Lines))
+	}
+	if analysis.Lines[0].Rank != 1 || analysis.Lines[0].Depth != 11 {
+		t.Errorf("lines = %#v", analysis.Lines)
+	}
+}
+
+func TestMergeAnalysisRequiresCurrentPrimaryVariation(t *testing.T) {
+	secondary, _ := parseAnalysis("info depth 16 multipv 2 score cp 20 pv d2d4 d7d5")
+	primary, _ := parseAnalysis("info depth 16 multipv 1 score cp 150 pv e2e4 e7e5")
+
+	analysis := mergeAnalysis(Analysis{}, secondary)
+	if len(analysis.Lines) != 0 {
+		t.Fatalf("secondary line without primary = %#v", analysis.Lines)
+	}
+	analysis = mergeAnalysis(analysis, primary)
+	analysis = mergeAnalysis(analysis, secondary)
+	if len(analysis.Lines) != 2 {
+		t.Fatalf("current primary and secondary lines = %#v", analysis.Lines)
 	}
 }
 

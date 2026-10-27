@@ -36,6 +36,50 @@ func TestClassifyMove(t *testing.T) {
 	}
 }
 
+func TestGreatMoveRequiresOnlyWinningPrimaryVariation(t *testing.T) {
+	var board chess.Board
+	board.Reset()
+	whiteMove, _ := board.ParseUCI("e2e4")
+	whiteAnalysis := engine.Analysis{
+		BestMove: "e2e4",
+		Lines: []engine.PrincipalVariation{
+			{Rank: 1, Depth: gameReviewDepth, Score: engine.Score{Centipawns: 150}},
+			{Rank: 2, Depth: gameReviewDepth, Score: engine.Score{Centipawns: 50}},
+		},
+	}
+	if !isGreatMove(board, whiteMove, whiteAnalysis, gameReviewDepth) {
+		t.Fatal("white only-winning move was not Great")
+	}
+	whiteAnalysis.Lines[1].Score.Centipawns = 51
+	if isGreatMove(board, whiteMove, whiteAnalysis, gameReviewDepth) {
+		t.Fatal("winning alternative was classified as Great")
+	}
+	whiteAnalysis.Lines[1].Score.Centipawns = 50
+	whiteAnalysis.Lines[1].Depth = gameReviewDepth - 1
+	if isGreatMove(board, whiteMove, whiteAnalysis, gameReviewDepth) {
+		t.Fatal("mixed-depth variations were classified as Great")
+	}
+
+	if err := board.MakeMove(whiteMove); err != nil {
+		t.Fatal(err)
+	}
+	blackMove, _ := board.ParseUCI("e7e5")
+	blackAnalysis := engine.Analysis{
+		BestMove: "e7e5",
+		Lines: []engine.PrincipalVariation{
+			{Rank: 1, Depth: gameReviewDepth, Score: engine.Score{Centipawns: 150}},
+			{Rank: 2, Depth: gameReviewDepth, Score: engine.Score{Centipawns: 50}},
+		},
+	}
+	if !isGreatMove(board, blackMove, blackAnalysis, gameReviewDepth) {
+		t.Fatal("black only-winning move was not Great")
+	}
+	blackAnalysis.Lines = blackAnalysis.Lines[:1]
+	if isGreatMove(board, blackMove, blackAnalysis, gameReviewDepth) {
+		t.Fatal("single-PV analysis was classified as Great")
+	}
+}
+
 func TestBuildMoveReviewsNormalizesBlackToMoveScores(t *testing.T) {
 	game := newLocalGameState(chess.WOOD)
 	game.uciInput = "e2e4"
@@ -189,5 +233,32 @@ func TestGameReviewPanelShowsVerdictBestMoveAndEvaluation(t *testing.T) {
 	game.handleKey(keyEvent(tcell.KeyEsc, 0), 80, 24)
 	if game.review.active {
 		t.Fatal("Esc did not return from Game Review to exports")
+	}
+}
+
+func TestGreatMoveReviewDoesNotShowRedundantBestMove(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.uciInput = "e2e4"
+	game.submitUCI()
+	game.terminalTitle = "Draw · ½-½"
+	game.viewPly = 1
+	game.review = gameReview{active: true, moves: []moveReview{{classification: moveGreat}}}
+	if got := game.reviewVerdict(); got != "e4 is a great move." {
+		t.Errorf("reviewVerdict() = %q", got)
+	}
+	if game.startVariation(); game.review.variation != nil {
+		t.Fatal("Great move exposed a redundant variation")
+	}
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 24)
+	drawLocalGame(screen, game)
+	screen.Show()
+	contents, width, height := screen.GetContents()
+	if !strings.Contains(screenText(contents, width, height), "It was the only winning move.") {
+		t.Fatal("Great move explanation was not rendered")
 	}
 }

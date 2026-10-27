@@ -32,17 +32,28 @@ type Score struct {
 	IsMate     bool
 }
 
-// Analysis is a single principal variation reported by Stockfish.
+// PrincipalVariation is one ranked line reported by Stockfish.
+type PrincipalVariation struct {
+	Rank  int
+	Depth int
+	Score Score
+	PV    []string
+}
+
+// Analysis contains the primary variation for compatibility, plus all ranked
+// variations collected during the search.
 type Analysis struct {
 	Depth    int
 	Score    Score
 	PV       []string
 	BestMove string
+	Lines    []PrincipalVariation
 }
 
 type Config struct {
 	Path       string
 	Difficulty int
+	MultiPV    int
 }
 
 type Client struct {
@@ -127,6 +138,9 @@ func SelectMove(policy Difficulty, best string, legal []string, randomInt func(i
 }
 
 func Start(ctx context.Context, config Config) (*Client, error) {
+	if err := validConfig(config); err != nil {
+		return nil, err
+	}
 	if config.Path == "" {
 		path, err := FindStockfish()
 		if err != nil {
@@ -173,11 +187,24 @@ func Start(ctx context.Context, config Config) (*Client, error) {
 		client.Close()
 		return nil, err
 	}
+	if config.MultiPV > 1 {
+		if err := client.command("setoption name MultiPV value " + strconv.Itoa(config.MultiPV)); err != nil {
+			client.Close()
+			return nil, err
+		}
+	}
 	if err := client.ready(ctx); err != nil {
 		client.Close()
 		return nil, err
 	}
 	return client, nil
+}
+
+func validConfig(config Config) error {
+	if config.MultiPV < 0 || config.MultiPV > 3 {
+		return errors.New("MultiPV must be between 0 and 3")
+	}
+	return nil
 }
 
 func (c *Client) readOutput(output io.Reader) {
@@ -239,15 +266,15 @@ func (c *Client) BestMove(ctx context.Context, moves []string, search Search) (s
 	}
 }
 
-// Analyze searches fen to depth and returns Stockfish's final single-PV
-// evaluation. The client remains usable when ctx is cancelled.
+// Analyze searches fen to depth and returns Stockfish's final evaluation. The
+// client remains usable when ctx is cancelled.
 func (c *Client) Analyze(ctx context.Context, fen string, depth int) (Analysis, error) {
 	return c.AnalyzeWithUpdates(ctx, fen, depth, nil)
 }
 
-// AnalyzeWithUpdates searches fen to depth and sends each parsed single-PV
-// update to updates when it is ready to receive. Updates are non-blocking and
-// may be dropped; the returned Analysis is always the latest result.
+// AnalyzeWithUpdates searches fen to depth and sends each aggregated update to
+// updates when it is ready to receive. Updates are non-blocking and may be
+// dropped; the returned Analysis is always the latest result.
 func (c *Client) AnalyzeWithUpdates(ctx context.Context, fen string, depth int, updates chan<- Analysis) (Analysis, error) {
 	if err := validAnalysisRequest(fen, depth); err != nil {
 		return Analysis{}, err
@@ -276,8 +303,8 @@ func (c *Client) AnalyzeWithUpdates(ctx context.Context, fen string, depth int, 
 				return latest, errors.New("Stockfish exited before completing analysis")
 			}
 			if analysis, ok := parseAnalysis(line); ok {
-				latest = analysis
-				publishAnalysis(updates, analysis)
+				latest = mergeAnalysis(latest, analysis)
+				publishAnalysis(updates, latest)
 				continue
 			}
 			if move, ok := bestMove(line); ok {
@@ -311,19 +338,26 @@ func parseAnalysis(line string) (Analysis, bool) {
 		return Analysis{}, false
 	}
 
-	var analysis Analysis
+	variation := PrincipalVariation{Rank: 1}
 	hasScore := false
 	for i := 1; i < len(fields); i++ {
 		switch fields[i] {
+		case "lowerbound", "upperbound":
+			return Analysis{}, false
 		case "depth":
 			if i+1 < len(fields) {
-				analysis.Depth, _ = strconv.Atoi(fields[i+1])
+				variation.Depth, _ = strconv.Atoi(fields[i+1])
 				i++
 			}
 		case "multipv":
-			if i+1 >= len(fields) || fields[i+1] != "1" {
+			if i+1 >= len(fields) {
 				return Analysis{}, false
 			}
+			rank, err := strconv.Atoi(fields[i+1])
+			if err != nil || rank < 1 {
+				return Analysis{}, false
+			}
+			variation.Rank = rank
 			i++
 		case "score":
 			if i+2 >= len(fields) {
@@ -335,24 +369,73 @@ func parseAnalysis(line string) (Analysis, bool) {
 			}
 			switch fields[i+1] {
 			case "cp":
-				analysis.Score.Centipawns = value
+				variation.Score.Centipawns = value
 			case "mate":
-				analysis.Score.Mate = value
-				analysis.Score.IsMate = true
+				variation.Score.Mate = value
+				variation.Score.IsMate = true
 			default:
 				return Analysis{}, false
 			}
 			hasScore = true
 			i += 2
 		case "pv":
-			analysis.PV = append([]string(nil), fields[i+1:]...)
+			variation.PV = append([]string(nil), fields[i+1:]...)
 			i = len(fields)
 		}
 	}
-	if analysis.Depth == 0 || !hasScore || len(analysis.PV) == 0 {
+	if variation.Depth == 0 || !hasScore || len(variation.PV) == 0 {
 		return Analysis{}, false
 	}
+	analysis := Analysis{Lines: []PrincipalVariation{variation}}
+	if variation.Rank == 1 {
+		analysis.Depth = variation.Depth
+		analysis.Score = variation.Score
+		analysis.PV = variation.PV
+	}
 	return analysis, true
+}
+
+func mergeAnalysis(latest, update Analysis) Analysis {
+	if len(update.Lines) != 1 {
+		return latest
+	}
+
+	variation := update.Lines[0]
+	lines := append([]PrincipalVariation(nil), latest.Lines...)
+	inserted := false
+	if variation.Rank == 1 {
+		// A fresh primary line invalidates alternatives from prior iterations.
+		lines = []PrincipalVariation{variation}
+		inserted = true
+	} else if len(lines) == 0 || lines[0].Rank != 1 || lines[0].Depth != variation.Depth {
+		return latest
+	}
+	if variation.Rank != 1 {
+		for i := range lines {
+			if lines[i].Rank == variation.Rank {
+				lines[i] = variation
+				inserted = true
+				break
+			}
+		}
+	}
+	if !inserted {
+		lines = append(lines, variation)
+	}
+	for i := len(lines) - 1; i > 0 && lines[i].Rank < lines[i-1].Rank; i-- {
+		lines[i], lines[i-1] = lines[i-1], lines[i]
+	}
+
+	latest.Lines = lines
+	for _, line := range lines {
+		if line.Rank == 1 {
+			latest.Depth = line.Depth
+			latest.Score = line.Score
+			latest.PV = line.PV
+			break
+		}
+	}
+	return latest
 }
 
 func publishAnalysis(updates chan<- Analysis, analysis Analysis) {
