@@ -43,18 +43,18 @@ func TestGreatMoveRequiresOnlyWinningPrimaryVariation(t *testing.T) {
 	whiteAnalysis := engine.Analysis{
 		BestMove: "e2e4",
 		Lines: []engine.PrincipalVariation{
-			{Rank: 1, Depth: gameReviewDepth, Score: engine.Score{Centipawns: 150}},
-			{Rank: 2, Depth: gameReviewDepth, Score: engine.Score{Centipawns: 50}},
+			{Rank: 1, Depth: gameReviewDepth, Score: engine.Score{Centipawns: 175}},
+			{Rank: 2, Depth: gameReviewDepth, Score: engine.Score{Centipawns: 25}},
 		},
 	}
 	if !isGreatMove(board, whiteMove, whiteAnalysis, gameReviewDepth) {
 		t.Fatal("white only-winning move was not Great")
 	}
-	whiteAnalysis.Lines[1].Score.Centipawns = 51
+	whiteAnalysis.Lines[1].Score.Centipawns = 26
 	if isGreatMove(board, whiteMove, whiteAnalysis, gameReviewDepth) {
 		t.Fatal("winning alternative was classified as Great")
 	}
-	whiteAnalysis.Lines[1].Score.Centipawns = 50
+	whiteAnalysis.Lines[1].Score.Centipawns = 25
 	whiteAnalysis.Lines[1].Depth = gameReviewDepth - 1
 	if isGreatMove(board, whiteMove, whiteAnalysis, gameReviewDepth) {
 		t.Fatal("mixed-depth variations were classified as Great")
@@ -67,8 +67,8 @@ func TestGreatMoveRequiresOnlyWinningPrimaryVariation(t *testing.T) {
 	blackAnalysis := engine.Analysis{
 		BestMove: "e7e5",
 		Lines: []engine.PrincipalVariation{
-			{Rank: 1, Depth: gameReviewDepth, Score: engine.Score{Centipawns: 150}},
-			{Rank: 2, Depth: gameReviewDepth, Score: engine.Score{Centipawns: 50}},
+			{Rank: 1, Depth: gameReviewDepth, Score: engine.Score{Centipawns: 175}},
+			{Rank: 2, Depth: gameReviewDepth, Score: engine.Score{Centipawns: 25}},
 		},
 	}
 	if !isGreatMove(board, blackMove, blackAnalysis, gameReviewDepth) {

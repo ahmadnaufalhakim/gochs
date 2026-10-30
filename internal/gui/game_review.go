@@ -14,8 +14,9 @@ import (
 const (
 	gameReviewDepth            = 16
 	greatMoveVerificationDepth = 20
-	greatWinningScore          = 150
-	greatNotWinningScore       = 50
+	greatWinningScore          = 175
+	greatNotWinningScore       = 25
+	greatMinimumGap            = 150
 )
 
 type moveClassification uint8
@@ -252,7 +253,9 @@ func isGreatMove(board chess.Board, played chess.Move, analysis engine.Analysis,
 	if primary.Depth != depth || secondary.Depth != depth {
 		return false
 	}
-	return scoreForMover(board, primary.Score) >= greatWinningScore && scoreForMover(board, secondary.Score) <= greatNotWinningScore
+	primaryScore := scoreForMover(board, primary.Score)
+	secondaryScore := scoreForMover(board, secondary.Score)
+	return primaryScore >= greatWinningScore && secondaryScore <= greatNotWinningScore && primaryScore-secondaryScore >= greatMinimumGap
 }
 
 func primaryAndSecondary(analysis engine.Analysis) (engine.PrincipalVariation, engine.PrincipalVariation, bool) {
