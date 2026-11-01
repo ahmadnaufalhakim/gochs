@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/ahmadnaufalhakim/gochs/internal/chess"
@@ -12,16 +13,18 @@ import (
 )
 
 const (
-	gameReviewDepth            = 16
-	greatMoveVerificationDepth = 20
-	greatWinningScore          = 150
-	greatNotWinningScore       = 50
+	gameReviewDepth       = 16
+	moveVerificationDepth = 20
+	greatWinningScore     = 150
+	greatNotWinningScore  = 50
+	brilliantTrivialScore = 700
 )
 
 type moveClassification uint8
 
 const (
-	moveGreat moveClassification = iota
+	moveBrilliant moveClassification = iota
+	moveGreat
 	moveBest
 	moveExcellent
 	moveOkay
@@ -31,11 +34,13 @@ const (
 )
 
 func (c moveClassification) String() string {
-	return [...]string{"Great", "Best", "Excellent", "Okay", "Inaccuracy", "Mistake", "Blunder"}[c]
+	return [...]string{"Brilliant", "Great", "Best", "Excellent", "Okay", "Inaccuracy", "Mistake", "Blunder"}[c]
 }
 
 func (c moveClassification) marker() string {
 	switch c {
+	case moveBrilliant:
+		return "!!"
 	case moveGreat:
 		return "!"
 	case moveBest:
@@ -51,6 +56,11 @@ func (c moveClassification) marker() string {
 	default:
 		return ""
 	}
+}
+
+type brilliantVerification struct {
+	before engine.Analysis
+	after  engine.Analysis
 }
 
 type positionEvaluation struct {
@@ -125,13 +135,18 @@ func startGameReview(ctx context.Context, target *localGameState, generation uin
 			sendReviewResult(ctx, results, reviewResult{target: target, generation: generation, progress: index + 1, total: len(positions)})
 		}
 
-		greatAnalyses, candidateCount, err := verifyGreatMoves(ctx, client, positions, moves, analyses, results, target, generation)
+		greatAnalyses, greatCandidateCount, err := verifyGreatMoves(ctx, client, positions, moves, analyses, results, target, generation)
 		if err != nil {
 			sendReviewResult(ctx, results, reviewResult{target: target, generation: generation, err: err, done: true})
 			return
 		}
-		reviews, err := buildMoveReviewsWithGreat(positions, moves, analyses, greatAnalyses)
-		total := len(positions) + candidateCount
+		brilliantAnalyses, brilliantCandidateCount, err := verifyBrilliantMoves(ctx, client, positions, moves, analyses, greatAnalyses, results, target, generation, greatCandidateCount)
+		if err != nil {
+			sendReviewResult(ctx, results, reviewResult{target: target, generation: generation, err: err, done: true})
+			return
+		}
+		reviews, err := buildMoveReviewsWithClassifications(positions, moves, analyses, greatAnalyses, brilliantAnalyses)
+		total := len(positions) + greatCandidateCount + brilliantCandidateCount
 		sendReviewResult(ctx, results, reviewResult{target: target, generation: generation, progress: total, total: total, moves: reviews, err: err, done: true})
 	}()
 }
@@ -150,16 +165,67 @@ func verifyGreatMoves(ctx context.Context, client *engine.Client, positions []ch
 		if err != nil {
 			return nil, 0, err
 		}
-		analysis, err := client.Analyze(ctx, fen, greatMoveVerificationDepth)
+		analysis, err := client.Analyze(ctx, fen, moveVerificationDepth)
 		if err != nil {
 			return nil, 0, err
 		}
-		if isGreatMove(positions[candidate], moves[candidate], analysis, greatMoveVerificationDepth) {
+		if isGreatMove(positions[candidate], moves[candidate], analysis, moveVerificationDepth) {
 			confirmed[candidate] = analysis
 		}
 		sendReviewResult(ctx, results, reviewResult{target: target, generation: generation, progress: len(positions) + index + 1, total: len(positions) + len(candidates)})
 	}
 	return confirmed, len(candidates), nil
+}
+
+func verifyBrilliantMoves(ctx context.Context, client *engine.Client, positions []chess.Board, moves []chess.Move, analyses []engine.Analysis, greatAnalyses map[int]engine.Analysis, results chan<- reviewResult, target *localGameState, generation uint64, completed int) (map[int]brilliantVerification, int, error) {
+	candidates := make([]int, 0)
+	for index, move := range moves {
+		if isBrilliantMove(positions[index], move, analyses[index], positions[index+1], analyses[index+1], gameReviewDepth) {
+			candidates = append(candidates, index)
+		}
+	}
+	steps := len(candidates) * 2
+	for _, candidate := range candidates {
+		if _, ok := greatAnalyses[candidate]; ok {
+			steps--
+		}
+	}
+	confirmed := make(map[int]brilliantVerification, len(candidates))
+	base := len(positions) + completed
+	sendReviewResult(ctx, results, reviewResult{target: target, generation: generation, progress: base, total: base + steps})
+	progress := 0
+	for _, candidate := range candidates {
+		before, ok := greatAnalyses[candidate]
+		if !ok {
+			fen, err := positions[candidate].FEN()
+			if err != nil {
+				return nil, 0, err
+			}
+			before, err = client.Analyze(ctx, fen, moveVerificationDepth)
+			if err != nil {
+				return nil, 0, err
+			}
+			progress++
+			sendReviewResult(ctx, results, reviewResult{target: target, generation: generation, progress: base + progress, total: base + steps})
+		}
+		after, terminal := terminalPositionAnalysis(positions[candidate+1])
+		if !terminal {
+			fen, err := positions[candidate+1].FEN()
+			if err != nil {
+				return nil, 0, err
+			}
+			after, err = client.Analyze(ctx, fen, moveVerificationDepth)
+			if err != nil {
+				return nil, 0, err
+			}
+		}
+		progress++
+		sendReviewResult(ctx, results, reviewResult{target: target, generation: generation, progress: base + progress, total: base + steps})
+		if isBrilliantMove(positions[candidate], moves[candidate], before, positions[candidate+1], after, moveVerificationDepth) {
+			confirmed[candidate] = brilliantVerification{before: before, after: after}
+		}
+	}
+	return confirmed, steps, nil
 }
 
 func terminalPositionAnalysis(position chess.Board) (engine.Analysis, bool) {
@@ -193,10 +259,14 @@ func sendReviewResult(ctx context.Context, results chan<- reviewResult, result r
 }
 
 func buildMoveReviews(positions []chess.Board, moves []chess.Move, analyses []engine.Analysis) ([]moveReview, error) {
-	return buildMoveReviewsWithGreat(positions, moves, analyses, nil)
+	return buildMoveReviewsWithClassifications(positions, moves, analyses, nil, nil)
 }
 
 func buildMoveReviewsWithGreat(positions []chess.Board, moves []chess.Move, analyses []engine.Analysis, greatAnalyses map[int]engine.Analysis) ([]moveReview, error) {
+	return buildMoveReviewsWithClassifications(positions, moves, analyses, greatAnalyses, nil)
+}
+
+func buildMoveReviewsWithClassifications(positions []chess.Board, moves []chess.Move, analyses []engine.Analysis, greatAnalyses map[int]engine.Analysis, brilliantAnalyses map[int]brilliantVerification) ([]moveReview, error) {
 	if len(positions) != len(moves)+1 || len(analyses) != len(positions) {
 		return nil, fmt.Errorf("review positions and analyses do not match moves")
 	}
@@ -206,8 +276,13 @@ func buildMoveReviewsWithGreat(positions []chess.Board, moves []chess.Move, anal
 		if verified, ok := greatAnalyses[index]; ok {
 			analysis = verified
 		}
+		afterAnalysis := analyses[index+1]
+		if verified, ok := brilliantAnalyses[index]; ok {
+			analysis = verified.before
+			afterAnalysis = verified.after
+		}
 		before := evaluationForWhite(positions[index], analysis.Score)
-		after := evaluationForWhite(positions[index+1], analyses[index+1].Score)
+		after := evaluationForWhite(positions[index+1], afterAnalysis.Score)
 		bestMove, err := positions[index].ParseUCI(analysis.BestMove)
 		if err != nil {
 			return nil, fmt.Errorf("parse Stockfish best move: %w", err)
@@ -220,9 +295,10 @@ func buildMoveReviewsWithGreat(positions []chess.Board, moves []chess.Move, anal
 		if err != nil {
 			return nil, err
 		}
-		loss := evaluationLoss(positions[index].ColorToMove, before, after)
-		classification := classifyMove(move, bestMove, loss)
-		if _, ok := greatAnalyses[index]; ok {
+		classification := classifyMove(move, bestMove, positions[index].ColorToMove, before, after)
+		if _, ok := brilliantAnalyses[index]; ok {
+			classification = moveBrilliant
+		} else if _, ok := greatAnalyses[index]; ok {
 			classification = moveGreat
 		}
 		reviews[index] = moveReview{
@@ -235,6 +311,32 @@ func buildMoveReviewsWithGreat(positions []chess.Board, moves []chess.Move, anal
 		}
 	}
 	return reviews, nil
+}
+
+func isBrilliantMove(before chess.Board, played chess.Move, beforeAnalysis engine.Analysis, afterBoard chess.Board, afterAnalysis engine.Analysis, depth int) bool {
+	if before.IsColorInCheck(before.ColorToMove) || !analysisAtDepth(afterAnalysis, afterBoard, depth) {
+		return false
+	}
+	mover := before.ColorToMove
+	if scoreForColor(afterBoard, afterAnalysis.Score, mover) < 0 {
+		return false
+	}
+	if _, secondary, ok := primaryAndSecondary(beforeAnalysis); ok && secondary.Depth == depth {
+		if scoreForColor(before, secondary.Score, mover) >= brilliantTrivialScore {
+			return false
+		}
+	} else if scoreForColor(afterBoard, afterAnalysis.Score, mover) >= brilliantTrivialScore {
+		return false
+	}
+	return chess.IsBrilliantSacrifice(before, played)
+}
+
+func analysisAtDepth(analysis engine.Analysis, board chess.Board, depth int) bool {
+	if analysis.Depth == depth {
+		return true
+	}
+	_, terminal := terminalPositionAnalysis(board)
+	return terminal
 }
 
 func isGreatMove(board chess.Board, played chess.Move, analysis engine.Analysis, depth int) bool {
@@ -272,8 +374,12 @@ func primaryAndSecondary(analysis engine.Analysis) (engine.PrincipalVariation, e
 }
 
 func scoreForMover(board chess.Board, score engine.Score) int {
+	return scoreForColor(board, score, board.ColorToMove)
+}
+
+func scoreForColor(board chess.Board, score engine.Score, color chess.PieceColor) int {
 	evaluation := evaluationValue(evaluationForWhite(board, score))
-	if board.ColorToMove == chess.Black {
+	if color == chess.Black {
 		return -evaluation
 	}
 	return evaluation
@@ -308,8 +414,57 @@ func evaluationValue(evaluation positionEvaluation) int {
 	return evaluation.centipawns
 }
 
-func classifyMove(move, bestMove chess.Move, loss int) moveClassification {
-	if move == bestMove || loss <= 10 {
+func classifyMove(move, bestMove chess.Move, mover chess.PieceColor, before, after positionEvaluation) moveClassification {
+	if move == bestMove {
+		return moveBest
+	}
+	if before.isMate || after.isMate {
+		return classifyCentipawnLoss(evaluationLoss(mover, before, after))
+	}
+
+	beforeScore := scoreForEvaluation(mover, before)
+	afterScore := scoreForEvaluation(mover, after)
+	pointLoss := max(0, expectedPoints(beforeScore)-expectedPoints(afterScore))
+	classification := classifyExpectedPointLoss(pointLoss)
+	if afterScore >= 300 && beforeScore-afterScore <= 300 && classification > moveOkay {
+		return moveOkay
+	}
+	return classification
+}
+
+func classifyExpectedPointLoss(pointLoss float64) moveClassification {
+	if pointLoss < 0.01 {
+		return moveBest
+	}
+	if pointLoss < 0.045 {
+		return moveExcellent
+	}
+	if pointLoss < 0.08 {
+		return moveOkay
+	}
+	if pointLoss < 0.12 {
+		return moveInaccuracy
+	}
+	if pointLoss < 0.22 {
+		return moveMistake
+	}
+	return moveBlunder
+}
+
+func scoreForEvaluation(color chess.PieceColor, evaluation positionEvaluation) int {
+	score := evaluationValue(evaluation)
+	if color == chess.Black {
+		return -score
+	}
+	return score
+}
+
+func expectedPoints(score int) float64 {
+	return 1 / (1 + math.Exp(-0.0035*float64(score)))
+}
+
+func classifyCentipawnLoss(loss int) moveClassification {
+	if loss <= 10 {
 		return moveBest
 	}
 	if loss <= 30 {
@@ -433,6 +588,9 @@ func (g localGameState) reviewVerdict() string {
 	}
 	if review.classification == moveBest {
 		return fmt.Sprintf("%s is the best move.", g.history[g.viewPly-1])
+	}
+	if review.classification == moveBrilliant {
+		return fmt.Sprintf("%s is a brilliant move.", g.history[g.viewPly-1])
 	}
 	if review.classification == moveGreat {
 		return fmt.Sprintf("%s is a great move.", g.history[g.viewPly-1])

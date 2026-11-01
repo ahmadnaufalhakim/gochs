@@ -16,23 +16,47 @@ func TestClassifyMove(t *testing.T) {
 	move, _ := board.ParseUCI("e2e4")
 	best, _ := board.ParseUCI("d2d4")
 	tests := []struct {
-		loss int
-		want moveClassification
+		after int
+		want  moveClassification
 	}{
-		{0, moveBest},
-		{11, moveExcellent},
-		{31, moveOkay},
-		{81, moveInaccuracy},
-		{181, moveMistake},
-		{351, moveBlunder},
+		{-1, moveBest},
+		{-20, moveExcellent},
+		{-60, moveOkay},
+		{-110, moveInaccuracy},
+		{-160, moveMistake},
+		{-300, moveBlunder},
 	}
 	for _, test := range tests {
-		if got := classifyMove(move, best, test.loss); got != test.want {
-			t.Errorf("classifyMove(%d) = %s, want %s", test.loss, got, test.want)
+		if got := classifyMove(move, best, chess.White, positionEvaluation{}, positionEvaluation{centipawns: test.after}); got != test.want {
+			t.Errorf("classifyMove(%d) = %s, want %s", test.after, got, test.want)
 		}
 	}
-	if got := classifyMove(move, move, 1000); got != moveBest {
+	if got := classifyMove(move, move, chess.White, positionEvaluation{}, positionEvaluation{centipawns: -1000}); got != moveBest {
 		t.Errorf("best move classification = %s", got)
+	}
+}
+
+func TestClassifyMoveKeepsClearWinningAdvantageOkay(t *testing.T) {
+	var board chess.Board
+	board.Reset()
+	move, _ := board.ParseUCI("e2e4")
+	best, _ := board.ParseUCI("d2d4")
+	before := positionEvaluation{centipawns: 634}
+	after := positionEvaluation{centipawns: 407}
+	if got := classifyMove(move, best, chess.White, before, after); got != moveOkay {
+		t.Errorf("classification = %s, want %s", got, moveOkay)
+	}
+}
+
+func TestClassifyMoveDoesNotDowngradeExcellentWinningMove(t *testing.T) {
+	var board chess.Board
+	board.Reset()
+	move, _ := board.ParseUCI("e2e4")
+	best, _ := board.ParseUCI("d2d4")
+	before := positionEvaluation{centipawns: 626}
+	after := positionEvaluation{centipawns: 514}
+	if got := classifyMove(move, best, chess.White, before, after); got != moveExcellent {
+		t.Errorf("classification = %s, want %s", got, moveExcellent)
 	}
 }
 
@@ -77,6 +101,44 @@ func TestGreatMoveRequiresOnlyWinningPrimaryVariation(t *testing.T) {
 	blackAnalysis.Lines = blackAnalysis.Lines[:1]
 	if isGreatMove(board, blackMove, blackAnalysis, gameReviewDepth) {
 		t.Fatal("single-PV analysis was classified as Great")
+	}
+}
+
+func TestBrilliantMoveRequiresNonLosingSacrifice(t *testing.T) {
+	before, err := chess.ParseFEN("7k/8/6p1/8/8/8/8/3Q2K1 w - - 0 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	move, err := before.ParseUCI("d1h5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := before
+	if err := after.MakeMove(move); err != nil {
+		t.Fatal(err)
+	}
+	beforeAnalysis := engine.Analysis{Lines: []engine.PrincipalVariation{{Rank: 2, Depth: gameReviewDepth, Score: engine.Score{Centipawns: 0}}}}
+	afterAnalysis := engine.Analysis{Depth: gameReviewDepth, Score: engine.Score{Centipawns: -20}}
+	if !isBrilliantMove(before, move, beforeAnalysis, after, afterAnalysis, gameReviewDepth) {
+		t.Fatal("non-losing sacrifice was not Brilliant")
+	}
+	afterAnalysis.Score.Centipawns = 20
+	if isBrilliantMove(before, move, beforeAnalysis, after, afterAnalysis, gameReviewDepth) {
+		t.Fatal("losing sacrifice was Brilliant")
+	}
+}
+
+func TestBrilliantClassificationTakesPriorityOverGreat(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.uciInput = "e2e4"
+	game.submitUCI()
+	best := engine.Analysis{BestMove: "e2e4", PV: []string{"e2e4"}}
+	reviews, err := buildMoveReviewsWithClassifications(game.positions, game.moves, []engine.Analysis{best, best}, map[int]engine.Analysis{0: best}, map[int]brilliantVerification{0: {before: best, after: best}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reviews[0].classification != moveBrilliant {
+		t.Errorf("classification = %s, want %s", reviews[0].classification, moveBrilliant)
 	}
 }
 
@@ -260,5 +322,20 @@ func TestGreatMoveReviewDoesNotShowRedundantBestMove(t *testing.T) {
 	contents, width, height := screen.GetContents()
 	if !strings.Contains(screenText(contents, width, height), "It was the only winning move.") {
 		t.Fatal("Great move explanation was not rendered")
+	}
+}
+
+func TestBrilliantMoveReviewShowsDoubleExclamation(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.uciInput = "e2e4"
+	game.submitUCI()
+	game.terminalTitle = "Draw · ½-½"
+	game.viewPly = 1
+	game.review = gameReview{active: true, moves: []moveReview{{classification: moveBrilliant}}}
+	if got := game.reviewVerdict(); got != "e4 is a brilliant move." {
+		t.Errorf("reviewVerdict() = %q", got)
+	}
+	if got := game.annotatedSAN(0); got != "e4!!" {
+		t.Errorf("annotatedSAN() = %q", got)
 	}
 }
