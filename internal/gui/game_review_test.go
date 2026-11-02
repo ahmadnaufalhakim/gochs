@@ -152,6 +152,30 @@ func TestBrilliantMoveRequiresNonLosingSacrifice(t *testing.T) {
 	}
 }
 
+func TestBrilliantMateSacrificeCanHaveWinningAlternative(t *testing.T) {
+	before, err := chess.ParseFEN("r4rk1/p1pppp1p/1p4p1/n3P1N1/2PPQ3/2PB4/q2BKP1P/6R1 w - - 0 19")
+	if err != nil {
+		t.Fatal(err)
+	}
+	move, err := before.ParseUCI("g5h7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := before
+	if err := after.MakeMove(move); err != nil {
+		t.Fatal(err)
+	}
+	beforeAnalysis := engine.Analysis{Lines: []engine.PrincipalVariation{{Rank: 2, Depth: moveVerificationDepth, Score: engine.Score{Centipawns: 755}}}}
+	matingAfter := engine.Analysis{Depth: moveVerificationDepth, Score: engine.Score{Mate: -14, IsMate: true}}
+	if !isBrilliantMove(before, move, beforeAnalysis, after, matingAfter, moveVerificationDepth) {
+		t.Fatal("forced-mate knight sacrifice was not Brilliant")
+	}
+	winningAfter := engine.Analysis{Depth: moveVerificationDepth, Score: engine.Score{Centipawns: -800}}
+	if isBrilliantMove(before, move, beforeAnalysis, after, winningAfter, moveVerificationDepth) {
+		t.Fatal("non-mating sacrifice with a trivial winning alternative was Brilliant")
+	}
+}
+
 func TestBrilliantClassificationTakesPriorityOverGreat(t *testing.T) {
 	game := newLocalGameState(chess.WOOD)
 	game.uciInput = "e2e4"
@@ -330,7 +354,7 @@ func TestGameReviewPanelShowsVerdictBestMoveAndEvaluation(t *testing.T) {
 	screen.Show()
 	contents, width, height := screen.GetContents()
 	text := screenText(contents, width, height)
-	for _, want := range []string{"e4 is inaccuracy.", "The best move was [d4]", "Eval: +0.00 -> -0.90"} {
+	for _, want := range []string{"e4 is an inaccuracy.", "The best move was [d4]", "Eval: +0.00 -> -0.90"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("review panel does not show %q", want)
 		}

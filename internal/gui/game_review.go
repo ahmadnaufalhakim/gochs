@@ -338,6 +338,9 @@ func isBrilliantMove(before chess.Board, played chess.Move, beforeAnalysis engin
 	if scoreForColor(afterBoard, afterAnalysis.Score, mover) < 0 {
 		return false
 	}
+	if isMateForColor(afterBoard, afterAnalysis.Score, mover) {
+		return chess.IsBrilliantSacrifice(before, played)
+	}
 	if _, secondary, ok := primaryAndSecondary(beforeAnalysis); ok && secondary.Depth == depth {
 		if scoreForColor(before, secondary.Score, mover) >= brilliantTrivialScore {
 			return false
@@ -346,6 +349,10 @@ func isBrilliantMove(before chess.Board, played chess.Move, beforeAnalysis engin
 		return false
 	}
 	return chess.IsBrilliantSacrifice(before, played)
+}
+
+func isMateForColor(board chess.Board, score engine.Score, color chess.PieceColor) bool {
+	return score.IsMate && scoreForColor(board, score, color) > 0
 }
 
 func analysisAtDepth(analysis engine.Analysis, board chess.Board, depth int) bool {

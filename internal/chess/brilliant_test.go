@@ -71,3 +71,31 @@ func TestIsBrilliantSacrificeRecognizesCaroKannKnightSacrifice(t *testing.T) {
 		t.Fatal("Caro-Kann knight sacrifice was not recognized")
 	}
 }
+
+func TestIsBrilliantSacrificeRecognizesKnightOffer(t *testing.T) {
+	board, err := ParseFEN("r4rk1/p1pppp1p/1p4p1/n3P1N1/2PPQ3/2PB4/q2BKP1P/6R1 w - - 0 19")
+	if err != nil {
+		t.Fatal(err)
+	}
+	move, err := board.ParseUCI("g5h7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !IsBrilliantSacrifice(board, move) {
+		t.Fatal("knight offer was not recognized")
+	}
+}
+
+func TestIsBrilliantSacrificeRecognizesRookOffer(t *testing.T) {
+	board, err := ParseFEN("r4r2/p1pppp1k/2p1p1p1/n3P3/2PPQ3/2PB4/q2BKP1P/6R1 w - - 0 20")
+	if err != nil {
+		t.Fatal(err)
+	}
+	move, err := board.ParseUCI("g1g6")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !IsBrilliantSacrifice(board, move) {
+		t.Fatal("rook offer was not recognized")
+	}
+}
