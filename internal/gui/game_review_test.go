@@ -60,6 +60,30 @@ func TestClassifyMoveDoesNotDowngradeExcellentWinningMove(t *testing.T) {
 	}
 }
 
+func TestClassifyMoveHandlesMateTransitions(t *testing.T) {
+	var board chess.Board
+	board.Reset()
+	move, _ := board.ParseUCI("e2e4")
+	best, _ := board.ParseUCI("d2d4")
+	tests := []struct {
+		name   string
+		before positionEvaluation
+		after  positionEvaluation
+		want   moveClassification
+	}{
+		{"slower winning mate", positionEvaluation{mate: 3, isMate: true}, positionEvaluation{mate: 5, isMate: true}, moveOkay},
+		{"delayed losing mate", positionEvaluation{mate: -3, isMate: true}, positionEvaluation{mate: -5, isMate: true}, moveBest},
+		{"winning mate to advantage", positionEvaluation{mate: 3, isMate: true}, positionEvaluation{centipawns: 800}, moveExcellent},
+		{"advantage to winning mate", positionEvaluation{}, positionEvaluation{mate: 2, isMate: true}, moveBest},
+		{"advantage to losing mate", positionEvaluation{}, positionEvaluation{mate: -3, isMate: true}, moveMistake},
+	}
+	for _, test := range tests {
+		if got := classifyMove(move, best, chess.White, test.before, test.after); got != test.want {
+			t.Errorf("%s: classification = %s, want %s", test.name, got, test.want)
+		}
+	}
+}
+
 func TestGreatMoveRequiresOnlyWinningPrimaryVariation(t *testing.T) {
 	var board chess.Board
 	board.Reset()
@@ -139,6 +163,26 @@ func TestBrilliantClassificationTakesPriorityOverGreat(t *testing.T) {
 	}
 	if reviews[0].classification != moveBrilliant {
 		t.Errorf("classification = %s, want %s", reviews[0].classification, moveBrilliant)
+	}
+}
+
+func TestEquivalentBrilliantMoveKeepsWinningAlternativeClose(t *testing.T) {
+	before := positionEvaluation{centipawns: 400}
+	if !isEquivalentBrilliantMove(moveBrilliant, chess.White, before, positionEvaluation{centipawns: 275}, false) {
+		t.Fatal("winning move within 125 centipawns was not equivalent")
+	}
+	if isEquivalentBrilliantMove(moveBrilliant, chess.White, before, positionEvaluation{centipawns: 274}, false) {
+		t.Fatal("winning move more than 125 centipawns behind was equivalent")
+	}
+	if isEquivalentBrilliantMove(moveBrilliant, chess.White, before, positionEvaluation{centipawns: 149}, false) {
+		t.Fatal("move that no longer wins was equivalent")
+	}
+}
+
+func TestBrilliantVerificationStepsReuseGreatAnalyses(t *testing.T) {
+	verified := map[int]engine.Analysis{1: {}, 3: {}}
+	if got := brilliantVerificationSteps([]int{1, 2, 3}, verified); got != 4 {
+		t.Errorf("brilliantVerificationSteps() = %d, want 4", got)
 	}
 }
 
@@ -331,11 +375,55 @@ func TestBrilliantMoveReviewShowsDoubleExclamation(t *testing.T) {
 	game.submitUCI()
 	game.terminalTitle = "Draw · ½-½"
 	game.viewPly = 1
-	game.review = gameReview{active: true, moves: []moveReview{{classification: moveBrilliant}}}
+	game.review = gameReview{active: true, moves: []moveReview{{classification: moveBrilliant, playedBest: true}}}
 	if got := game.reviewVerdict(); got != "e4 is a brilliant move." {
 		t.Errorf("reviewVerdict() = %q", got)
 	}
 	if got := game.annotatedSAN(0); got != "e4!!" {
 		t.Errorf("annotatedSAN() = %q", got)
+	}
+	if game.startVariation(); game.review.variation != nil {
+		t.Fatal("Brilliant best move exposed a redundant variation")
+	}
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 24)
+	drawLocalGame(screen, game)
+	screen.Show()
+	contents, width, height := screen.GetContents()
+	if strings.Contains(screenText(contents, width, height), "The best move was") {
+		t.Fatal("Brilliant best move showed redundant best-move text")
+	}
+}
+
+func TestBrilliantAlternativeUsesWinningMoveWording(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	game.uciInput = "e2e4"
+	game.submitUCI()
+	game.terminalTitle = "Draw · ½-½"
+	game.viewPly = 1
+	game.review = gameReview{active: true, moves: []moveReview{{
+		classification: moveBrilliant,
+		equivalentBest: true,
+		bestSAN:        "d4",
+	}}}
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(80, 24)
+	drawLocalGame(screen, game)
+	screen.Show()
+	contents, width, height := screen.GetContents()
+	text := screenText(contents, width, height)
+	if !strings.Contains(text, "Another winning move was [d4]") {
+		t.Fatal("Brilliant alternative did not use winning-move wording")
+	}
+	if strings.Contains(text, "The best move was") {
+		t.Fatal("Brilliant alternative used ordinary best-move wording")
 	}
 }
