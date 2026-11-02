@@ -177,15 +177,6 @@ func brilliantDirectAttacks(board Board, target brilliantPiece) []brilliantAttac
 			attacks = append(attacks, brilliantAttack{move: move, piece: attackBoard.PieceAt(move.From())})
 		}
 	}
-	for square := a1; square <= h8; square++ {
-		piece := board.PieceAt(square)
-		if piece == (Piece{Color: attackerColor, Type: King}) && GenerateKingAttacks(board, attackerColor)&target.square.Mask() != 0 {
-			attack := brilliantAttack{move: NewMove(square, target.square, Capture), piece: piece}
-			if !brilliantHasAttack(attacks, attack) {
-				attacks = append(attacks, attack)
-			}
-		}
-	}
 	return attacks
 }
 
