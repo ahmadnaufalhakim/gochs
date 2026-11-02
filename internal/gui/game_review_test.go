@@ -376,7 +376,7 @@ func TestBrilliantMoveReviewShowsDoubleExclamation(t *testing.T) {
 	game.terminalTitle = "Draw · ½-½"
 	game.viewPly = 1
 	game.review = gameReview{active: true, moves: []moveReview{{classification: moveBrilliant, playedBest: true}}}
-	if got := game.reviewVerdict(); got != "e4 is a brilliant move." {
+	if got := game.reviewVerdict(); got != "e4 is a brilliant move!" {
 		t.Errorf("reviewVerdict() = %q", got)
 	}
 	if got := game.annotatedSAN(0); got != "e4!!" {

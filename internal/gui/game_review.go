@@ -630,19 +630,25 @@ func (g localGameState) reviewVerdict() string {
 	if !ok {
 		return "Select a move to inspect its review."
 	}
-	if review.classification == moveBest {
-		return fmt.Sprintf("%s is the best move.", g.history[g.viewPly-1])
-	}
 	if review.classification == moveBrilliant {
-		return fmt.Sprintf("%s is a brilliant move.", g.history[g.viewPly-1])
+		return fmt.Sprintf("%s is a brilliant move!", g.history[g.viewPly-1])
 	}
 	if review.classification == moveGreat {
 		return fmt.Sprintf("%s is a great move.", g.history[g.viewPly-1])
 	}
+	if review.classification == moveBest {
+		return fmt.Sprintf("%s is the best move.", g.history[g.viewPly-1])
+	}
+	if review.classification == moveExcellent {
+		return fmt.Sprintf("%s is an excellent move.", g.history[g.viewPly-1])
+	}
 	if review.classification == moveOkay {
 		return fmt.Sprintf("%s is an okay move.", g.history[g.viewPly-1])
 	}
-	return fmt.Sprintf("%s is %s.", g.history[g.viewPly-1], strings.ToLower(review.classification.String()))
+	if review.classification == moveInaccuracy {
+		return fmt.Sprintf("%s is an inaccuracy.", g.history[g.viewPly-1])
+	}
+	return fmt.Sprintf("%s is a %s.", g.history[g.viewPly-1], strings.ToLower(review.classification.String()))
 }
 
 func isBestMoveClassification(classification moveClassification) bool {
