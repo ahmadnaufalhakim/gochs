@@ -99,3 +99,17 @@ func TestIsBrilliantSacrificeRecognizesRookOffer(t *testing.T) {
 		t.Fatal("rook offer was not recognized")
 	}
 }
+
+func TestIsBrilliantSacrificeRecognizesGoldCoinsQueenOffer(t *testing.T) {
+	board, err := ParseFEN("5rk1/pp4pp/4p3/2R3Q1/3n4/2q4r/P1PB1PP1/6KR b - - 0 23")
+	if err != nil {
+		t.Fatal(err)
+	}
+	move, err := board.ParseUCI("c3g3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !IsBrilliantSacrifice(board, move) {
+		t.Fatal("Gold Coins queen offer was not recognized")
+	}
+}

@@ -44,7 +44,8 @@ func IsBrilliantSacrifice(before Board, move Move) bool {
 
 	previousUnsafe := brilliantUnsafePieces(before, movingPiece.Color, PieceNone)
 	unsafe := brilliantUnsafePieces(after, movingPiece.Color, captured.Type)
-	if !after.IsColorInCheck(after.ColorToMove) && len(unsafe) < len(previousUnsafe) {
+	movedPieceUnsafe := brilliantContainsSquare(unsafe, move.To())
+	if !after.IsColorInCheck(after.ColorToMove) && len(unsafe) < len(previousUnsafe) && !movedPieceUnsafe {
 		return false
 	}
 
@@ -58,7 +59,7 @@ func IsBrilliantSacrifice(before Board, move Move) bool {
 dangerFound:
 	previousTrapped := brilliantTrappedPieces(before, previousUnsafe)
 	trapped := brilliantTrappedPieces(after, unsafe)
-	if len(trapped) == len(unsafe) || brilliantContainsSquare(previousTrapped, move.From()) || len(trapped) < len(previousTrapped) {
+	if len(trapped) == len(unsafe) || brilliantContainsSquare(previousTrapped, move.From()) || len(trapped) < len(previousTrapped) && !movedPieceUnsafe {
 		return false
 	}
 
