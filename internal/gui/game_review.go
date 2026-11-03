@@ -19,6 +19,8 @@ const (
 	greatNotWinningScore        = 50
 	brilliantTrivialScore       = 700
 	brilliantAlternativeMaxLoss = 125
+	drawScore                   = 50
+	drawContinuationLoss        = -150
 )
 
 type moveClassification uint8
@@ -32,10 +34,11 @@ const (
 	moveInaccuracy
 	moveMistake
 	moveBlunder
+	moveForced
 )
 
 func (c moveClassification) String() string {
-	return [...]string{"Brilliant", "Great", "Best", "Excellent", "Okay", "Inaccuracy", "Mistake", "Blunder"}[c]
+	return [...]string{"Brilliant", "Great", "Best", "Excellent", "Okay", "Inaccuracy", "Mistake", "Blunder", "Forced"}[c]
 }
 
 func (c moveClassification) marker() string {
@@ -68,6 +71,10 @@ type positionEvaluation struct {
 	centipawns int
 	mate       int
 	isMate     bool
+}
+
+type reviewColor struct {
+	red, green, blue uint8
 }
 
 type moveReview struct {
@@ -277,6 +284,7 @@ func buildMoveReviewsWithClassifications(positions []chess.Board, moves []chess.
 		return nil, fmt.Errorf("review positions and analyses do not match moves")
 	}
 	reviews := make([]moveReview, len(moves))
+	drawRescues := [chess.PieceColorCount]bool{}
 	for index, move := range moves {
 		analysis := analyses[index]
 		if verified, ok := greatAnalyses[index]; ok {
@@ -301,11 +309,28 @@ func buildMoveReviewsWithClassifications(positions []chess.Board, moves []chess.
 		if err != nil {
 			return nil, err
 		}
-		classification := classifyMove(move, bestMove, positions[index].ColorToMove, before, after)
-		if _, ok := brilliantAnalyses[index]; ok {
-			classification = moveBrilliant
-		} else if _, ok := greatAnalyses[index]; ok {
-			classification = moveGreat
+		mover := positions[index].ColorToMove
+		forced := len(chess.GenerateLegalMoves(positions[index])) == 1
+		classification := moveForced
+		if !forced {
+			classification = classifyMove(move, bestMove, mover, before, after)
+			if _, ok := brilliantAnalyses[index]; ok {
+				classification = moveBrilliant
+			} else if _, ok := greatAnalyses[index]; ok {
+				classification = moveGreat
+			}
+		}
+		if drawRescues[mover] {
+			if isDrawRescueContinuation(positions[index], move, analysis, positions[index+1], afterAnalysis) {
+				if !forced {
+					classification = moveBrilliant
+				}
+			} else {
+				drawRescues[mover] = false
+			}
+		}
+		if !forced && classification == moveBrilliant && isDrawRescue(positions[index], mover, before, after, analysis) {
+			drawRescues[mover] = true
 		}
 		reviews[index] = moveReview{
 			classification: classification,
@@ -319,6 +344,32 @@ func buildMoveReviewsWithClassifications(positions []chess.Board, moves []chess.
 		}
 	}
 	return reviews, nil
+}
+
+func isDrawRescue(board chess.Board, mover chess.PieceColor, before, after positionEvaluation, analysis engine.Analysis) bool {
+	if absolute(scoreForEvaluation(mover, after)) > drawScore {
+		return false
+	}
+	if scoreForEvaluation(mover, before) <= drawContinuationLoss {
+		return true
+	}
+	_, secondary, ok := primaryAndSecondary(analysis)
+	return ok && secondary.Depth == analysis.Depth && scoreForMover(board, secondary.Score) <= drawContinuationLoss
+}
+
+func isDrawRescueContinuation(before chess.Board, played chess.Move, analysis engine.Analysis, after chess.Board, afterAnalysis engine.Analysis) bool {
+	bestMove, err := before.ParseUCI(analysis.BestMove)
+	if err != nil || played != bestMove || absolute(scoreForColor(after, afterAnalysis.Score, before.ColorToMove)) > drawScore {
+		return false
+	}
+	return true
+}
+
+func absolute(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func isEquivalentBrilliantMove(classification moveClassification, mover chess.PieceColor, before, after positionEvaluation, playedBest bool) bool {
@@ -338,8 +389,11 @@ func isBrilliantMove(before chess.Board, played chess.Move, beforeAnalysis engin
 	if scoreForColor(afterBoard, afterAnalysis.Score, mover) < 0 {
 		return false
 	}
-	if isMateForColor(afterBoard, afterAnalysis.Score, mover) {
-		return chess.IsBrilliantSacrifice(before, played)
+	if !chess.IsBrilliantSacrifice(before, played) {
+		return false
+	}
+	if isMateForColor(afterBoard, afterAnalysis.Score, mover) || isQueenSacrificeOffer(before, played) {
+		return true
 	}
 	if _, secondary, ok := primaryAndSecondary(beforeAnalysis); ok && secondary.Depth == depth {
 		if scoreForColor(before, secondary.Score, mover) >= brilliantTrivialScore {
@@ -348,7 +402,23 @@ func isBrilliantMove(before chess.Board, played chess.Move, beforeAnalysis engin
 	} else if scoreForColor(afterBoard, afterAnalysis.Score, mover) >= brilliantTrivialScore {
 		return false
 	}
-	return chess.IsBrilliantSacrifice(before, played)
+	return true
+}
+
+func isQueenSacrificeOffer(before chess.Board, played chess.Move) bool {
+	if before.PieceAt(played.From()).Type != chess.Queen {
+		return false
+	}
+	after := before
+	if err := after.MakeMove(played); err != nil {
+		return false
+	}
+	for _, reply := range chess.GenerateLegalMoves(after) {
+		if reply.To() == played.To() {
+			return true
+		}
+	}
+	return false
 }
 
 func isMateForColor(board chess.Board, score engine.Score, color chess.PieceColor) bool {
@@ -655,7 +725,79 @@ func (g localGameState) reviewVerdict() string {
 	if review.classification == moveInaccuracy {
 		return fmt.Sprintf("%s is an inaccuracy.", g.history[g.viewPly-1])
 	}
+	if review.classification == moveForced {
+		return fmt.Sprintf("%s is forced.", g.history[g.viewPly-1])
+	}
 	return fmt.Sprintf("%s is a %s.", g.history[g.viewPly-1], strings.ToLower(review.classification.String()))
+}
+
+func reviewClassificationColor(classification moveClassification) reviewColor {
+	switch classification {
+	case moveBrilliant:
+		return reviewColor{red: 0x2a, green: 0xc7, blue: 0xac}
+	case moveGreat:
+		return reviewColor{red: 0x7f, green: 0xa3, blue: 0xc7}
+	case moveBest, moveExcellent:
+		return reviewColor{red: 0x6f, green: 0xc2, blue: 0x15}
+	case moveOkay:
+		return reviewColor{red: 0x82, green: 0xb0, blue: 0x51}
+	case moveInaccuracy:
+		return reviewColor{red: 0xfb, green: 0xc8, blue: 0x37}
+	case moveMistake:
+		return reviewColor{red: 0xfd, green: 0xad, blue: 0x66}
+	case moveBlunder:
+		return reviewColor{red: 0xf9, green: 0x46, blue: 0x2f}
+	case moveForced:
+		return reviewColor{red: 0x8a, green: 0x8a, blue: 0x8a}
+	default:
+		return reviewColor{}
+	}
+}
+
+func reviewClassificationStyle(classification moveClassification) tcell.Style {
+	background := reviewClassificationColor(classification)
+	return mutedStyle.Foreground(reviewContrastForeground(background)).Background(tcell.NewRGBColor(int32(background.red), int32(background.green), int32(background.blue)))
+}
+
+func reviewContrastForeground(background reviewColor) tcell.Color {
+	luminance := reviewRelativeLuminance(background)
+	blackContrast := (luminance + 0.05) / 0.05
+	whiteContrast := 1.05 / (luminance + 0.05)
+	if blackContrast >= whiteContrast {
+		return tcell.ColorBlack
+	}
+	return tcell.ColorWhite
+}
+
+func reviewRelativeLuminance(color reviewColor) float64 {
+	linear := func(channel uint8) float64 {
+		value := float64(channel) / 255
+		if value <= 0.04045 {
+			return value / 12.92
+		}
+		return math.Pow((value+0.055)/1.055, 2.4)
+	}
+	return 0.2126*linear(color.red) + 0.7152*linear(color.green) + 0.0722*linear(color.blue)
+}
+
+func (g localGameState) drawReviewVerdict(screen tcell.Screen, x, y int) {
+	verdict := g.reviewVerdict()
+	review, ok := g.selectedMoveReview()
+	if !ok {
+		drawString(screen, x, y, verdict, mutedStyle)
+		return
+	}
+	classification := strings.ToLower(review.classification.String())
+	start := strings.Index(verdict, classification)
+	if start < 0 {
+		drawString(screen, x, y, verdict, mutedStyle)
+		return
+	}
+	end := start + len(classification)
+	prefix := verdict[:start]
+	drawString(screen, x, y, prefix, mutedStyle)
+	drawString(screen, x+runewidth.StringWidth(prefix), y, classification, reviewClassificationStyle(review.classification))
+	drawString(screen, x+runewidth.StringWidth(verdict[:end]), y, verdict[end:], mutedStyle)
 }
 
 func isBestMoveClassification(classification moveClassification) bool {
@@ -663,7 +805,7 @@ func isBestMoveClassification(classification moveClassification) bool {
 }
 
 func reviewIsBestMove(review moveReview) bool {
-	return isBestMoveClassification(review.classification) || review.classification == moveBrilliant && review.playedBest
+	return review.classification == moveForced || isBestMoveClassification(review.classification) || review.classification == moveBrilliant && review.playedBest
 }
 
 func (g localGameState) annotatedSAN(index int) string {
@@ -752,7 +894,7 @@ func drawGameReviewPanel(screen tcell.Screen, game localGameState, layout boardL
 		drawString(screen, x, y+reviewHintOffset(compact), "Esc: return to exports", mutedStyle)
 		return
 	}
-	drawString(screen, x, y, game.reviewVerdict(), mutedStyle)
+	game.drawReviewVerdict(screen, x, y)
 	review, ok := game.selectedMoveReview()
 	if ok {
 		drawString(screen, x, y+2, "Eval: "+formatEvaluation(review.before)+" -> "+formatEvaluation(review.after), mutedStyle)

@@ -8,6 +8,7 @@ import (
 	"github.com/ahmadnaufalhakim/gochs/internal/engine"
 	"github.com/ahmadnaufalhakim/gochs/internal/sound"
 	"github.com/gdamore/tcell/v2"
+	"github.com/mattn/go-runewidth"
 )
 
 func TestClassifyMove(t *testing.T) {
@@ -57,6 +58,77 @@ func TestClassifyMoveDoesNotDowngradeExcellentWinningMove(t *testing.T) {
 	after := positionEvaluation{centipawns: 514}
 	if got := classifyMove(move, best, chess.White, before, after); got != moveExcellent {
 		t.Errorf("classification = %s, want %s", got, moveExcellent)
+	}
+}
+
+func TestReviewClassificationColorsUseReadableForegrounds(t *testing.T) {
+	tests := []struct {
+		classification moveClassification
+		color          reviewColor
+	}{
+		{moveBrilliant, reviewColor{0x2a, 0xc7, 0xac}},
+		{moveGreat, reviewColor{0x7f, 0xa3, 0xc7}},
+		{moveBest, reviewColor{0x6f, 0xc2, 0x15}},
+		{moveExcellent, reviewColor{0x6f, 0xc2, 0x15}},
+		{moveOkay, reviewColor{0x82, 0xb0, 0x51}},
+		{moveInaccuracy, reviewColor{0xfb, 0xc8, 0x37}},
+		{moveMistake, reviewColor{0xfd, 0xad, 0x66}},
+		{moveBlunder, reviewColor{0xf9, 0x46, 0x2f}},
+		{moveForced, reviewColor{0x8a, 0x8a, 0x8a}},
+	}
+	for _, test := range tests {
+		if got := reviewClassificationColor(test.classification); got != test.color {
+			t.Errorf("reviewClassificationColor(%s) = %#v, want %#v", test.classification, got, test.color)
+		}
+		if got := reviewContrastForeground(test.color); got != tcell.ColorBlack {
+			t.Errorf("reviewContrastForeground(%#v) = %v, want black", test.color, got)
+		}
+	}
+	if got := reviewContrastForeground(reviewColor{1, 1, 1}); got != tcell.ColorWhite {
+		t.Errorf("reviewContrastForeground(dark) = %v, want white", got)
+	}
+}
+
+func TestForcedMoveOverridesQualityClassification(t *testing.T) {
+	before, err := chess.ParseFEN("7k/6Q1/8/5K2/8/8/8/8 b - - 0 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legalMoves := chess.GenerateLegalMoves(before)
+	if len(legalMoves) != 1 {
+		t.Fatalf("legal moves = %d, want 1", len(legalMoves))
+	}
+	after := before
+	if err := after.MakeMove(legalMoves[0]); err != nil {
+		t.Fatal(err)
+	}
+	reviews, err := buildMoveReviews(
+		[]chess.Board{before, after},
+		legalMoves,
+		[]engine.Analysis{
+			{Depth: gameReviewDepth, Score: engine.Score{Centipawns: -900}, BestMove: "h8g7", PV: []string{"h8g7"}},
+			{Depth: gameReviewDepth, Score: engine.Score{Centipawns: 900}},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reviews[0].classification != moveForced {
+		t.Errorf("classification = %s, want %s", reviews[0].classification, moveForced)
+	}
+	if reviews[0].classification.marker() != "" {
+		t.Errorf("forced marker = %q, want empty", reviews[0].classification.marker())
+	}
+	if !reviewIsBestMove(reviews[0]) {
+		t.Fatal("forced move should not show a best-move recommendation")
+	}
+	game := localGameState{
+		history: []string{"Kxg7"},
+		viewPly: 1,
+		review:  gameReview{active: true, moves: reviews},
+	}
+	if got := game.reviewVerdict(); got != "Kxg7 is forced." {
+		t.Errorf("review verdict = %q, want forced verdict", got)
 	}
 }
 
@@ -176,6 +248,26 @@ func TestBrilliantMateSacrificeCanHaveWinningAlternative(t *testing.T) {
 	}
 }
 
+func TestBrilliantQueenOfferCanHaveWinningAlternative(t *testing.T) {
+	before, err := chess.ParseFEN("5rk1/pp4pp/4p3/2R3Q1/3n4/2q4r/P1PB1PP1/6KR b - - 0 23")
+	if err != nil {
+		t.Fatal(err)
+	}
+	move, err := before.ParseUCI("c3g3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := before
+	if err := after.MakeMove(move); err != nil {
+		t.Fatal(err)
+	}
+	beforeAnalysis := engine.Analysis{Lines: []engine.PrincipalVariation{{Rank: 2, Depth: moveVerificationDepth, Score: engine.Score{Centipawns: 907}}}}
+	afterAnalysis := engine.Analysis{Depth: moveVerificationDepth, Score: engine.Score{Centipawns: -900}}
+	if !isBrilliantMove(before, move, beforeAnalysis, after, afterAnalysis, moveVerificationDepth) {
+		t.Fatal("Gold Coins queen offer was not Brilliant")
+	}
+}
+
 func TestBrilliantClassificationTakesPriorityOverGreat(t *testing.T) {
 	game := newLocalGameState(chess.WOOD)
 	game.uciInput = "e2e4"
@@ -187,6 +279,64 @@ func TestBrilliantClassificationTakesPriorityOverGreat(t *testing.T) {
 	}
 	if reviews[0].classification != moveBrilliant {
 		t.Errorf("classification = %s, want %s", reviews[0].classification, moveBrilliant)
+	}
+}
+
+func TestBrilliantDrawRescueContinuesWithBestDrawingMove(t *testing.T) {
+	game := newLocalGameState(chess.WOOD)
+	for _, uci := range []string{"e2e4", "e7e5", "g1f3", "b8c6", "f1c4"} {
+		game.uciInput = uci
+		game.submitUCI()
+	}
+	analyses := []engine.Analysis{
+		{Depth: gameReviewDepth, Score: engine.Score{Centipawns: -200}, BestMove: "e2e4", PV: []string{"e2e4"}},
+		{Depth: gameReviewDepth, Score: engine.Score{}, BestMove: "e7e5", PV: []string{"e7e5"}},
+		{
+			Depth:    gameReviewDepth,
+			Score:    engine.Score{},
+			BestMove: "g1f3",
+			PV:       []string{"g1f3"},
+			Lines: []engine.PrincipalVariation{
+				{Rank: 1, Depth: gameReviewDepth, Score: engine.Score{}},
+				{Rank: 2, Depth: gameReviewDepth, Score: engine.Score{Centipawns: -200}},
+			},
+		},
+		{Depth: gameReviewDepth, Score: engine.Score{}, BestMove: "b8c6", PV: []string{"b8c6"}},
+		{Depth: gameReviewDepth, Score: engine.Score{}, BestMove: "f1c4", PV: []string{"f1c4"}},
+		{Depth: gameReviewDepth, Score: engine.Score{}, BestMove: "g8f6", PV: []string{"g8f6"}},
+	}
+	reviews, err := buildMoveReviewsWithClassifications(game.positions, game.moves, analyses, nil, map[int]brilliantVerification{0: {before: analyses[0], after: analyses[1]}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reviews[0].classification != moveBrilliant {
+		t.Errorf("rescue classification = %s, want %s", reviews[0].classification, moveBrilliant)
+	}
+	if reviews[2].classification != moveBrilliant {
+		t.Errorf("forced drawing continuation = %s, want %s", reviews[2].classification, moveBrilliant)
+	}
+	if reviews[4].classification != moveBrilliant {
+		t.Errorf("later drawing continuation = %s, want %s", reviews[4].classification, moveBrilliant)
+	}
+	analyses[0].Score.Centipawns = 0
+	analyses[0].Lines = []engine.PrincipalVariation{
+		{Rank: 1, Depth: gameReviewDepth, Score: engine.Score{}},
+		{Rank: 2, Depth: gameReviewDepth, Score: engine.Score{Centipawns: -200}},
+	}
+	reviews, err = buildMoveReviewsWithClassifications(game.positions, game.moves, analyses, nil, map[int]brilliantVerification{0: {before: analyses[0], after: analyses[1]}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reviews[2].classification != moveBrilliant {
+		t.Fatal("only drawing Brilliant move did not start a draw continuation")
+	}
+	analyses[2].Lines[1].Score.Centipawns = -20
+	reviews, err = buildMoveReviewsWithClassifications(game.positions, game.moves, analyses, nil, map[int]brilliantVerification{0: {before: analyses[0], after: analyses[1]}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reviews[2].classification != moveBrilliant {
+		t.Fatal("best drawing move with another drawing alternative was not Brilliant")
 	}
 }
 
@@ -358,6 +508,19 @@ func TestGameReviewPanelShowsVerdictBestMoveAndEvaluation(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Errorf("review panel does not show %q", want)
 		}
+	}
+	layout, ok := localBoardLayout(80, 24)
+	if !ok {
+		t.Fatal("expected board layout")
+	}
+	_, _, style, _ := screen.GetContent(layout.x-2+runewidth.StringWidth("e4 is an "), layout.y+12)
+	foreground, background, _ := style.Decompose()
+	if foreground != tcell.ColorBlack {
+		t.Errorf("verdict foreground = %v, want black", foreground)
+	}
+	wantBackground := reviewClassificationColor(moveInaccuracy)
+	if background != tcell.NewRGBColor(int32(wantBackground.red), int32(wantBackground.green), int32(wantBackground.blue)) {
+		t.Errorf("verdict background = %v, want %v", background, wantBackground)
 	}
 
 	game.handleKey(keyEvent(tcell.KeyEsc, 0), 80, 24)
